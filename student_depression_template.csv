@@ -1,0 +1,4 @@
+id,Gender,Age,City,Profession,Academic Pressure,Work Pressure,CGPA,Study Satisfaction,Job Satisfaction,Sleep Duration,Dietary Habits,Degree,Have you ever had suicidal thoughts ?,Work/Study Hours,Financial Stress,Family History of Mental Illness
+1,Male,20,Hanoi,Student,3,2,3.2,4,3,7,Healthy,Bachelor,No,6,2,No
+2,Female,21,Saigon,Student,4,3,3.5,5,4,6,Moderate,Master,Yes,7,3,Yes
+3,Male,22,Danang,Student,2,1,3.8,3,2,8,Unhealthy,Bachelor,No,5,1,No
