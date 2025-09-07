@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Predictions on Students Depression</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; min-height: 100vh; }
+        .result-box { background: white; padding: 30px; border-radius: 12px; box-shadow: 0px 0px 14px #b3c6e7; width: 95vw; max-width: 1200px; margin: 40px auto; }
+        h2 { text-align: center; margin-bottom: 10px; }
+        .datetime { text-align: center; color: #888; margin-bottom: 20px; }
+        .table-responsive { width: 100%; overflow-x: auto; margin-bottom: 18px; }
+        table { width: 100%; border-collapse: collapse; min-width: 800px; font-size: 0.9em; }
+        th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: center; }
+        th { background: #4CAF50; color: white; font-weight: bold; position: sticky; top: 0; }
+        td { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .btn { display: block; margin: 20px auto 0 auto; padding: 12px 24px; background: #4CAF50; color: white; border: none; border-radius: 6px; cursor: pointer; text-align: center; text-decoration: none; font-weight: bold; }
+        .btn:hover { background: #45a049; transform: translateY(-2px); transition: all 0.2s; }
+        .nav-links { text-align: center; margin-top: 18px; }
+        .nav-link { display: inline-block; margin: 0 10px; color: #1976d2; background: #fff; border-radius: 4px; padding: 7px 18px; text-decoration: none; font-weight: 500; border: 1px solid #1976d2; transition: background 0.2s, color 0.2s; }
+        .nav-link:hover { background: #1976d2; color: #fff; }
+        .chart-container { width: 100%; max-width: 400px; margin: 24px auto 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 0 8px #b3c6e7; padding: 18px; }
+        @media (max-width: 1000px) {
+            .result-box { padding: 15px; max-width: 98vw; }
+            table { font-size: 0.8em; min-width: 600px; }
+            th, td { padding: 6px 8px; }
+        }
+        @media (max-width: 600px) {
+            table { font-size: 0.7em; min-width: 500px; }
+            th, td { padding: 4px 6px; }
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="result-box">
+        <h2>Depression Prediction Results</h2>
+        <div class="datetime">{{ current_time }}</div>
+        
+        <!-- Download Button for Results -->
+        <div style="text-align: center; margin-bottom: 20px;">
+            <a href="{{ url_for('download_results', filename=download_filename) }}" class="btn" style="background: #2196F3; display: inline-block;">
+                📥 Download Complete Results (CSV)
+            </a>
+            <p style="color: #666; font-size: 0.9em; margin-top: 8px;">
+                Download includes all patient data + prediction results for clinical review
+            </p>
+        </div>
+        
+        <!-- Summary Statistics for Clinical Review -->
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2196F3;">
+            <h3 style="margin: 0 0 10px 0; color: #2196F3;">📊 Clinical Summary</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div>
+                    <strong>Total Patients Screened:</strong> {{ results|length }}
+                </div>
+                <div>
+                    <strong>At-Risk Patients:</strong> 
+                    <span style="color: #f44336; font-weight: bold;">
+                        {{ results|selectattr('Depression_Status', 'equalto', 'Depressed')|list|length }}
+                    </span>
+                </div>
+                <div>
+                    <strong>Low-Risk Patients:</strong> 
+                    <span style="color: #4CAF50; font-weight: bold;">
+                        {{ results|selectattr('Depression_Status', 'equalto', 'Not Depressed')|list|length }}
+                    </span>
+                </div>
+                <div>
+                    <strong>Risk Percentage:</strong>
+                    {% set risk_count = results|selectattr('Depression_Status', 'equalto', 'Depressed')|list|length %}
+                    {% set total_count = results|length %}
+                    <span style="color: {% if (risk_count/total_count*100) > 50 %}#f44336{% else %}#ff9800{% endif %}; font-weight: bold;">
+                        {{ "%.1f"|format(risk_count/total_count*100) }}%
+                    </span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="table-responsive">
+        <table>
+            <tr>
+                {% for column in columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+            </tr>
+            {% for row in results %}
+            <tr>
+                {% for column in columns %}
+                <td>
+                    {% if column == 'Depression_Status' %}
+                        <strong style="color: {% if row[column] == 'Depressed' %}#f44336{% else %}#4CAF50{% endif %};">
+                            {{ row[column] }}
+                        </strong>
+                    {% elif column == 'Depression_Prediction' %}
+                        <span style="background: {% if row[column] == 1 %}#ffebee{% else %}#e8f5e8{% endif %}; padding: 4px 8px; border-radius: 4px;">
+                            {{ row[column] }}
+                        </span>
+                    {% else %}
+                        {{ row[column] }}
+                    {% endif %}
+                </td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </table>
+        </div>
+        
+        <!-- Clinical Notes -->
+        <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #ffc107;">
+            <h4 style="margin: 0 0 10px 0; color: #856404;">⚕️ Clinical Notes</h4>
+            <ul style="margin: 0; padding-left: 20px; color: #856404;">
+                <li><strong>AI-Assisted Screening:</strong> Results are based on machine learning analysis of student data patterns</li>
+                <li><strong>Clinical Validation Required:</strong> These predictions should supplement, not replace, professional clinical assessment</li>
+                <li><strong>Methodology:</strong> Random Forest model with class-weighted training for balanced depression detection</li>
+                <li><strong>Download:</strong> Complete results file includes all input data plus prediction labels for your records</li>
+            </ul>
+        </div>
+        <div class="chart-container">
+            <canvas id="statusChart"></canvas>
+        </div>
+        <div class="section-title" style="text-align:center; margin-top:18px; color:#1976d2; font-weight:600;">Prediction Distribution</div>
+        <div class="chart-container">
+            <canvas id="predictionDistChart"></canvas>
+        </div>
+        <div class="nav-links">
+            <a href="/upload" class="nav-link">Return to Input Page</a>
+            {% if session['username'] == 'admin' %}
+                <a href="/dashboard" class="nav-link">Dashboard</a>
+            {% endif %}
+            <a href="/logout" class="nav-link">Sign Out</a>
+        </div>
+    </div>
+    <script>
+        // Sample data for the chart - replace with your actual data
+        const statusData = {
+            labels: ['Depressed', 'Not Depressed'],
+            datasets: [{
+                label: 'Number of Students',
+                data: [{{ depressed_count }}, {{ not_depressed_count }}],
+                backgroundColor: ['#f44336', '#4caf50'],
+                borderColor: ['#d32f2f', '#388e3c'],
+                borderWidth: 1
+            }]
+        };
+
+        // Config for the chart
+        const config = {
+            type: 'bar',
+            data: statusData,
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            },
+        };
+
+        // Render the chart
+        const statusChart = new Chart(
+            document.getElementById('statusChart'),
+            config
+        );
+
+        const predDistData = {{ prediction_dist_data|tojson }};
+        const ctxPred = document.getElementById('predictionDistChart').getContext('2d');
+        new Chart(ctxPred, {
+            type: 'pie',
+            data: {
+                labels: predDistData.labels,
+                datasets: [{
+                    data: predDistData.counts,
+                    backgroundColor: ['#1976d2', '#4CAF50'],
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    </script>
+</body>
+</html>
