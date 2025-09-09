@@ -37,12 +37,6 @@ class Config:
                 "login_history_file": "login_history.csv"
             },
             
-            # Kaggle Configuration
-            "kaggle": {
-                "dataset": "ngocdung/student-depression-dataset",
-                "filename": "student_depression_dataset.csv"
-            },
-            
             # Model Training Parameters
             "training": {
                 "test_size": 0.2,
@@ -284,13 +278,6 @@ class Config:
             self.config["retraining"]["performance_threshold"] = round(new_perf_threshold, 4)
             self.config["metadata"]["auto_tuned_count"] += 1
             print(f"Auto-tuned performance threshold: {current_perf_threshold} → {round(new_perf_threshold, 4)}")
-    
-    def get_kaggle_config(self) -> tuple:
-        """Get Kaggle dataset configuration"""
-        return (
-            self.config["kaggle"]["dataset"],
-            self.config["kaggle"]["filename"]
-        )
     
     def get_validation_limits(self) -> Dict[str, tuple]:
         """Get data validation limits"""
