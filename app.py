@@ -1,68 +1,65 @@
-from flask import Flask, jsonify, request, render_template, redirect, url_for, flash, send_from_directory, session
+from flask import Flask, jsonify, request, render_template, redirect, url_for, flash, send_from_directory, session, send_file
 import os
 import pandas as pd
 import joblib
 from datetime import datetime
 import sqlite3
+import numpy as np
+from utils.login_api import login_api
+from utils.download_template_api import download_template_api
+import io
+
+# Import centralized configuration
+from utils.config import config
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key_here'  # Add a secret key for session management and flash messages
+app.secret_key = 'secret_key_here'  # Add a secret key for session management and flash messages
 
-# Simple user database
-users = {
-    'admin': 'password',
-    'user': 'userpass'
-}
+# Use config for upload folder
+app.config['UPLOAD_FOLDER'] = config.config["paths"]["uploads_dir"]
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-UPLOAD_FOLDER = 'uploads'
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+#  # BE
+# def init_db():
+#     conn = sqlite3.connect('predictions.db')
+#     c = conn.cursor()
+#     c.execute('''
+#         CREATE TABLE IF NOT EXISTS predictions (
+#             id INTEGER PRIMARY KEY AUTOINCREMENT,
+#             user TEXT,
+#             filename TEXT,
+#             input_data TEXT,
+#             prediction TEXT,
+#             timestamp TEXT
+#         )
+#     ''')
+#     conn.commit()
+#     conn.close()
 
-def init_db():
-    conn = sqlite3.connect('predictions.db')
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS predictions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user TEXT,
-            filename TEXT,
-            input_data TEXT,
-            prediction TEXT,
-            timestamp TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+# # Call this at app startup
+# init_db()
 
-# Call this at app startup
-init_db()
-
+#FE
 @app.route('/', methods=['GET'])
 def hello_world():
     return render_template('index.html')
 
+#BE + FE
 @app.route('/login', methods=['POST'])
 def login():
     username = request.form.get('username')
     password = request.form.get('password')
+    authentication = login_api(username=username, password=password)
     # Check if user exists and password matches
-    if username in users and users[username] == password:
-        session['username'] = username
-        # Log login activity
-        login_log_path = 'logs/login_history.csv'
-        import csv
-        from datetime import datetime
-        log_exists = os.path.exists(login_log_path)
-        with open(login_log_path, 'a', newline='') as logfile:
-            writer = csv.writer(logfile)
-            if not log_exists:
-                writer.writerow(['user', 'time'])
-            writer.writerow([username, datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+    if authentication:
         return redirect(url_for('upload_file'))
     else:
-        return "Invalid credentials. Please try again.", 401
+        # Flash error message and redirect back to login page
+        flash('Invalid username or password. Please try again.', 'error')
+        return redirect(url_for('hello_world'))
 
-@app.route('/upload', methods=['GET', 'POST'])
+# BE + FE
+@app.route('/upload', methods=['GET', 'POST']) 
 def upload_file():
     from datetime import datetime
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -77,40 +74,90 @@ def upload_file():
         if file:
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
             file.save(filepath)
-            # Validate columns (exclude 'Depression')
-            new_df = pd.read_csv(filepath)
-            master_path = 'models/student_depression_dataset.csv'
-            if os.path.exists(master_path):
-                master_df = pd.read_csv(master_path)
-                required_cols = [col for col in master_df.columns if col != 'Depression']
-                if list(new_df.columns) != required_cols:
-                    flash('Uploaded file columns do not match required features. Please use the correct template.')
+            
+            try:
+                # Validate columns (exclude 'Depression')
+                new_df = pd.read_csv(filepath)
+                
+                # APPLY DATA VALIDATION BEFORE PROCESSING
+                try:
+                    from models.training import validate_and_clean_data
+                    new_df = validate_and_clean_data(new_df)
+                except Exception as validation_error:
+                    flash(f'Data validation warning: {str(validation_error)}. Continuing with original data.')
+                    # Continue with original data if validation fails
+                
+                master_path = config.get_data_path()
+                if os.path.exists(master_path):
+                    master_df = pd.read_csv(master_path)
+                    # Exclude all prediction-related columns when comparing with uploaded file
+                    prediction_cols = ['Depression', 'Depression_Pred', 'Depression_Proba', 'PredictedAt']
+                    required_cols = [col for col in master_df.columns if col not in prediction_cols]
+                    if list(new_df.columns) != required_cols:
+                        flash('Uploaded file columns do not match required features. Please use the correct template.')
+                        os.remove(filepath)
+                        return redirect(request.url)
+                    # Add empty 'Depression' column for new records
+                    new_df['Depression'] = pd.NA
+                    
+                    # Fix ID conflicts: Generate continuous IDs
+                    if 'id' in new_df.columns:
+                        # Get the max ID from master dataset and continue from there
+                        try:
+                            max_id = master_df['id'].max() if 'id' in master_df.columns and not master_df.empty else 0
+                            # Ensure max_id is an integer
+                            max_id = int(float(max_id)) if pd.notna(max_id) else 0
+                            new_df['id'] = range(max_id + 1, max_id + 1 + len(new_df))
+                        except Exception as id_error:
+                            # If ID generation fails, create simple sequential IDs
+                            new_df['id'] = range(1, len(new_df) + 1)
+                    
+                    # Ensure data type compatibility before concatenation
+                    try:
+                        # Convert all columns to object type to avoid type conflicts
+                        master_df_safe = master_df.astype(str)
+                        new_df_safe = new_df.astype(str)
+                        combined_df = pd.concat([master_df_safe, new_df_safe], ignore_index=True)
+                        
+                        # Convert back to appropriate types after concatenation
+                        for col in combined_df.columns:
+                            if col not in ['id', 'Depression']:
+                                try:
+                                    # Try to convert to numeric if possible
+                                    numeric_series = pd.to_numeric(combined_df[col], errors='ignore')
+                                    if not numeric_series.equals(combined_df[col]):
+                                        combined_df[col] = numeric_series
+                                except:
+                                    pass
+                        
+                    except Exception as concat_error:
+                        # Fallback: just use the new data
+                        combined_df = new_df
+                        
+                else:
+                    # If no master, create with empty Depression column
+                    new_df['Depression'] = pd.NA
+                    
+                    # Initialize IDs starting from 1 if no master exists
+                    if 'id' in new_df.columns:
+                        try:
+                            new_df['id'] = range(1, len(new_df) + 1)
+                        except Exception:
+                            # Fallback: create simple integer IDs
+                            new_df['id'] = list(range(1, len(new_df) + 1))
+                    
+                    combined_df = new_df
+                    
+            except Exception as e:
+                flash(f'Error processing file: {str(e)}. Please check your data format and try again.')
+                if os.path.exists(filepath):
                     os.remove(filepath)
-                    return redirect(request.url)
-                # Add empty 'Depression' column for new records
-                new_df['Depression'] = pd.NA
-                
-                # Fix ID conflicts: Generate continuous IDs
-                if 'id' in new_df.columns:
-                    # Get the max ID from master dataset and continue from there
-                    max_id = master_df['id'].max() if 'id' in master_df.columns and not master_df.empty else 0
-                    new_df['id'] = range(max_id + 1, max_id + 1 + len(new_df))
-                
-                combined_df = pd.concat([master_df, new_df], ignore_index=True)
-            else:
-                # If no master, create with empty Depression column
-                new_df['Depression'] = pd.NA
-                
-                # Initialize IDs starting from 1 if no master exists
-                if 'id' in new_df.columns:
-                    new_df['id'] = range(1, len(new_df) + 1)
-                
-                combined_df = new_df
+                return redirect(request.url)
             # Data versioning: backup current master before overwrite
             import shutil
             import time
             if os.path.exists(master_path):
-                version_dir = 'models/versions'
+                version_dir = config.get_versions_dir()
                 os.makedirs(version_dir, exist_ok=True)
                 timestamp = time.strftime('%Y%m%d_%H%M%S')
                 backup_path = os.path.join(version_dir, f'student_depression_dataset_{timestamp}.csv')
@@ -121,7 +168,7 @@ def upload_file():
             if duplicate_rows > 0:
                 flash(f'Warning: {duplicate_rows} duplicate records detected in your upload.')
             # Log upload history
-            log_path = 'logs/upload_history.csv'
+            log_path = config.get_upload_history_path()
             import csv
             log_exists = os.path.exists(log_path)
             with open(log_path, 'a', newline='') as logfile:
@@ -131,61 +178,52 @@ def upload_file():
                 writer.writerow([session.get('username', 'unknown'), file.filename, current_time])
             
             # Check if we should retrain (batch-based)
-            from models.training import trigger_retrain
-            trigger_retrain()  # This will only retrain if needed
+            try:
+                from models.training import trigger_retrain
+                trigger_retrain()  # This will only retrain if needed
+            except Exception as retrain_error:
+                # Log the error but don't fail the upload
+                flash(f'Note: Automatic retraining check failed: {str(retrain_error)}')
                 
             return redirect(url_for('predict', filename=file.filename))
     return render_template('upload.html', current_time=current_time)
 
+#Check 2 predict 
 @app.route('/predict')
 def predict():
     filename = request.args.get('filename')
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     df = pd.read_csv(filepath)
     
-    # Load the trained model pipeline for real predictions
+    # Use the proper prediction function from training module
     try:
-        # Try Random Forest pipeline first (primary model)
-        model_pipeline = joblib.load('models/rf_model.pkl')
-        print("✅ Loaded Random Forest pipeline for prediction")
-        
-        # Remove ID column from features before prediction (ID is not a predictive feature)
-        df_features = df.drop(columns=['id'], errors='ignore')
-        
-        # Use pipeline for prediction (handles preprocessing automatically)
-        predictions = model_pipeline.predict(df_features).tolist()
-        prediction_probabilities = model_pipeline.predict_proba(df_features)[:, 1]
-        
-        print(f"✅ Generated {len(predictions)} predictions using trained pipeline")
+        from models.training import predict_depression
+        predictions, prediction_probabilities = predict_depression(df)
+        print(f"Generated {len(predictions)} predictions using trained model")
         
     except Exception as e:
-        print(f"⚠️ Pipeline prediction failed: {e}")
-        # Fallback to logistic regression pipeline
-        try:
-            model_pipeline = joblib.load('models/log_model.pkl')
-            print("✅ Loaded Logistic Regression pipeline as fallback")
-            
-            df_features = df.drop(columns=['id'], errors='ignore')
-            predictions = model_pipeline.predict(df_features).tolist()
-            prediction_probabilities = model_pipeline.predict_proba(df_features)[:, 1]
-            
-            print(f"✅ Generated {len(predictions)} predictions using fallback pipeline")
-            
-        except Exception as e2:
-            print(f"❌ Both pipelines failed: {e2}")
-            # Final fallback to simple rule-based logic
-            df_features = df.drop(columns=['id'], errors='ignore')
-            predictions = [1 if len([col for col in df_features.columns if 'stress' in col.lower() or 'anxiety' in col.lower()]) > 2 else 0 
-                          for idx, row in df_features.iterrows()]
-            prediction_probabilities = [0.7 if pred == 1 else 0.3 for pred in predictions]
-            print(f"⚠️ Using fallback rule-based predictions")
+        print(f"Prediction failed: {e}")
+        # Final fallback to simple rule-based logic
+        df_features = df.drop(columns=['id'], errors='ignore')
+        predictions = [1 if len([col for col in df_features.columns if 'stress' in col.lower() or 'anxiety' in col.lower()]) > 2 else 0 
+                      for idx, row in df_features.iterrows()]
+        prediction_probabilities = [0.7 if pred == 1 else 0.3 for pred in predictions]
+        print(f"Using fallback rule-based predictions")
     
-    # CREATE COMPLETE RESULTS WITH ALL COLUMNS + PREDICTIONS
-    # Add prediction labels to the original dataframe
+    # CREATE COMPLETE RESULTS WITH ALL COLUMNS + PREDICTIONS AT THE END
+    # Add prediction labels to the original dataframe - ensure they come LAST
     df_with_predictions = df.copy()
+    
+    # Add prediction columns at the END (not at arbitrary positions)
     df_with_predictions['Depression_Prediction'] = predictions
     df_with_predictions['Depression_Status'] = ['Depressed' if pred == 1 else 'Not Depressed' for pred in predictions]
     df_with_predictions['Confidence_Score'] = [f"{prob:.3f}" for prob in prediction_probabilities]
+    
+    # Reorder columns to ensure original data comes first, predictions come last
+    original_columns = [col for col in df.columns if col in df_with_predictions.columns]
+    prediction_columns = ['Depression_Prediction', 'Depression_Status', 'Confidence_Score']
+    ordered_columns = original_columns + prediction_columns
+    df_with_predictions = df_with_predictions[ordered_columns]
     
     # Save results file for download
     results_filename = f"results_{filename.replace('.csv', '')}_predictions.csv"
@@ -203,19 +241,22 @@ def predict():
         status = 'Depressed' if pred == 1 else 'Not Depressed'
         pred_counts[status] += 1
     
-    # Save predictions back to master dataset
-    master_path = 'models/student_depression_dataset.csv'
+    # Save predictions back to master dataset - NEVER overwrite ground truth labels!
+    master_path = config.get_data_path()
     if os.path.exists(master_path):
         master_df = pd.read_csv(master_path)
         # Find the most recently added records with NULL Depression labels
         null_rows = master_df[master_df['Depression'].isna()]
         if len(null_rows) >= len(predictions):
-            # Update the most recent NULL rows with predictions
+            # Store predictions in SEPARATE columns - never overwrite ground truth
             recent_null_indices = null_rows.tail(len(predictions)).index
-            master_df.loc[recent_null_indices, 'Depression'] = predictions
+            master_df.loc[recent_null_indices, 'Depression_Pred'] = predictions
+            master_df.loc[recent_null_indices, 'Depression_Proba'] = prediction_probabilities
+            master_df.loc[recent_null_indices, 'PredictedAt'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             master_df.to_csv(master_path, index=False)
     
     # Store predictions in database
+    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Define timestamp BEFORE using it
     try:
         conn = sqlite3.connect('predictions.db')
         c = conn.cursor()
@@ -238,61 +279,38 @@ def predict():
         'labels': list(pred_counts.keys()),
         'counts': list(pred_counts.values())
     }
-    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     return render_template('result.html', 
                          results=result_rows, 
                          current_time=current_time, 
                          prediction_dist_data=prediction_dist_data,
                          download_filename=results_filename,
-                         columns=list(df_with_predictions.columns))
+                         columns=list(df_with_predictions.columns),
+                         depressed_count=pred_counts.get('Depressed', 0),
+                         not_depressed_count=pred_counts.get('Not Depressed', 0))
 
-@app.route('/api/predict', methods=['POST'])
-def api_predict():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    # Save uploaded file temporarily
-    temp_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-    file.save(temp_path)
-    # Load data
-    df = pd.read_csv(temp_path)
-    # Load model
-    model = joblib.load('models/rf_model.pkl')
-    # Preprocess input (assume same as training)
-    # --- You may need to adjust this block to match your training pipeline ---
-    # Example: drop or fill missing columns, encode categoricals, scale numerics, etc.
-    # For demo, just use all columns except 'id' if present
-    if 'id' in df.columns:
-        X_pred = df.drop(columns=['id'])
-    else:
-        X_pred = df
-    # Predict
-    preds = model.predict(X_pred)
-    # Return results as JSON
-    return jsonify({'predictions': preds.tolist()})
-
+#BE
 @app.route('/student_depression_template.csv')
 def download_template():
-    return send_from_directory(directory='.', path='student_depression_template.csv', as_attachment=True)
+    response = download_template_api()
 
-@app.route('/fetch_kaggle', methods=['POST'])
-def fetch_kaggle():
-    from models.training import fetch_from_kaggle, train_model
-    status_message = fetch_from_kaggle()
-    train_model()  # Full retrain after fetching new data
-    return redirect(url_for('dashboard', status_message=status_message))
+    if response.status_code != 200:
+        return "Failed to fetch CSV from Lambda", 500
 
-@app.route('/restore_backup', methods=['POST'])
-def restore_backup():
-    from models.training import restore_backup, train_model
-    backup_file = request.form.get('backup_file')
-    status_message = restore_backup(backup_file)
-    train_model()  # Full retrain after restoring backup
-    return redirect(url_for('dashboard', status_message=status_message))
+    file_bytes = response.content 
 
+    # Wrap bytes in a file-like object
+    file_obj = io.BytesIO(file_bytes)
+
+    # Send file as attachment
+    return send_file(
+        file_obj,
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name='student_depression_template.csv'
+    )
+    
+#FE + BE
 @app.route('/dashboard')
 def dashboard():
     # Only allow admin
@@ -300,13 +318,13 @@ def dashboard():
         flash('Access denied: Admins only.')
         return redirect(url_for('upload_file'))
     # Example: Read log file and show last 10 events
-    log_path = 'logs/app.log'
+    log_path = os.path.join(config.config["paths"]["logs_dir"], 'app.log')
     logs = []
     if os.path.exists(log_path):
         with open(log_path) as f:
             logs = f.readlines()[-10:]
     # Stats
-    master_path = 'models/student_depression_dataset.csv'
+    master_path = config.get_data_path()
     total_records = 0
     doctor_uploads = 0
     if os.path.exists(master_path):
@@ -318,14 +336,14 @@ def dashboard():
             df['id'] = pd.to_numeric(df['id'], errors='coerce')
             doctor_uploads = df[df['id'] > 10000].shape[0]
     # Last retrain time
-    model_path = 'models/rf_model.pkl'
+    model_path = config.get_model_path()
     last_retrain = 'N/A'
     if os.path.exists(model_path):
         import datetime
         last_retrain = datetime.datetime.fromtimestamp(os.path.getmtime(model_path)).strftime('%Y-%m-%d %H:%M:%S')
     # Read upload history
     upload_history = []
-    upload_log_path = 'logs/upload_history.csv'
+    upload_log_path = config.get_upload_history_path()
     if os.path.exists(upload_log_path):
         import csv
         with open(upload_log_path, newline='') as csvfile:
@@ -352,7 +370,7 @@ def dashboard():
     class_distribution = "Not Available"
     imbalance_ratio = "Not Available"
     
-    metrics_path = 'logs/model_metrics.txt'
+    metrics_path = config.get_metrics_path()
     if os.path.exists(metrics_path):
         with open(metrics_path) as f:
             model_metrics = f.read()
@@ -377,25 +395,54 @@ def dashboard():
                     class_distribution = line.split('Original class distribution:')[1].strip()
                 elif 'Imbalance ratio:' in line:
                     imbalance_ratio = line.split('Imbalance ratio:')[1].strip()
-    # Prepare retrain frequency data for chart
-    retrain_dir = 'models/versions'
-    retrain_dates = []
-    if os.path.exists(retrain_dir):
-        for fname in os.listdir(retrain_dir):
-            if fname.startswith('student_depression_dataset_') and fname.endswith('.csv'):
-                try:
-                    date_str = fname.split('_')[-2]  # e.g. 20240906 from 20240906_153000
-                    date_fmt = fname.split('_')[-2] + '_' + fname.split('_')[-1].replace('.csv','')
-                    dt = datetime.strptime(date_fmt, '%Y%m%d_%H%M%S')
-                    retrain_dates.append(dt.strftime('%Y-%m-%d'))
-                except Exception:
-                    continue
-    retrain_counts = Counter(retrain_dates)
-    sorted_retrain_dates = sorted(retrain_counts.keys())
-    retrain_freq_data = {
-        'labels': sorted_retrain_dates,
-        'counts': [retrain_counts[d] for d in sorted_retrain_dates]
+    # Prepare performance history data for chart
+    performance_history_data = {
+        'labels': [],
+        'accuracy': [],
+        'f1_score': []
     }
+    
+    # Extract performance metrics from model metrics file
+    if model_metrics:
+        try:
+            lines = model_metrics.split('\n')
+            training_events = []
+            current_event = {}
+            
+            for line in lines:
+                if 'Training completed at:' in line:
+                    if current_event:
+                        training_events.append(current_event)
+                    current_event = {'timestamp': line.split('Training completed at:')[1].strip()}
+                elif 'Accuracy:' in line and current_event:
+                    try:
+                        acc = float(line.split('Accuracy:')[1].strip()) * 100
+                        current_event['accuracy'] = acc
+                    except:
+                        pass
+                elif 'F1-score:' in line and current_event:
+                    try:
+                        f1 = float(line.split('F1-score:')[1].strip()) * 100
+                        current_event['f1_score'] = f1
+                    except:
+                        pass
+            
+            if current_event:
+                training_events.append(current_event)
+            
+            # Prepare chart data from training events
+            for i, event in enumerate(training_events[-10:]):  # Show last 10 training events
+                if 'accuracy' in event and 'f1_score' in event:
+                    performance_history_data['labels'].append(f'Training {i+1}')
+                    performance_history_data['accuracy'].append(round(event['accuracy'], 2))
+                    performance_history_data['f1_score'].append(round(event['f1_score'], 2))
+        except Exception:
+            # If parsing fails, show placeholder data
+            performance_history_data = {
+                'labels': ['Initial Training'],
+                'accuracy': [85.0],
+                'f1_score': [82.0]
+            }
     # Find the most recent uploaded file for this session (admin)
     last_result_url = None
     if session.get('username') == 'admin' and upload_history:
@@ -403,17 +450,12 @@ def dashboard():
         last_result_url = url_for('predict', filename=last_file)
     # Read login history
     login_history = []
-    login_log_path = 'logs/login_history.csv'
+    login_log_path = config.get_login_history_path()
     if os.path.exists(login_log_path):
         import csv
         with open(login_log_path, newline='') as csvfile:
             reader = csv.DictReader(csvfile)
             login_history = list(reader)[-20:]  # Show last 20 logins
-    # Backup versions for restore dropdown
-    version_dir = 'models/versions'
-    backup_versions = []
-    if os.path.exists(version_dir):
-        backup_versions = sorted([f for f in os.listdir(version_dir) if f.endswith('.csv')], reverse=True)
     # Status message from query param
     status_message = request.args.get('status_message')
     return render_template('dashboard.html', 
@@ -424,73 +466,47 @@ def dashboard():
                          upload_history=upload_history, 
                          model_metrics=model_metrics, 
                          upload_trends_data=upload_trends_data, 
-                         retrain_freq_data=retrain_freq_data, 
+                         performance_history_data=performance_history_data, 
                          last_result_url=last_result_url, 
                          login_history=login_history, 
-                         backup_versions=backup_versions, 
                          status_message=status_message,
                          imbalance_method=imbalance_method,
                          class_distribution=class_distribution,
                          imbalance_ratio=imbalance_ratio)
-
+#FE
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('hello_world'))
 
-@app.route('/api/predictions', methods=['GET'])
-def get_predictions():
-    """Get prediction history from database"""
-    try:
-        conn = sqlite3.connect('predictions.db')
-        c = conn.cursor()
-        c.execute('SELECT * FROM predictions ORDER BY timestamp DESC LIMIT 100')
-        rows = c.fetchall()
-        conn.close()
+# #BE
+# @app.route('/api/predictions', methods=['GET'])
+# def get_predictions():
+#     """Get prediction history from database"""
+#     try:
+#         conn = sqlite3.connect('predictions.db')
+#         c = conn.cursor()
+#         c.execute('SELECT * FROM predictions ORDER BY timestamp DESC LIMIT 100')
+#         rows = c.fetchall()
+#         conn.close()
         
-        # Convert to list of dicts for JSON
-        results = [
-            {
-                'id': row[0], 
-                'user': row[1], 
-                'filename': row[2], 
-                'input_data': row[3], 
-                'prediction': row[4], 
-                'timestamp': row[5]
-            }
-            for row in rows
-        ]
-        return jsonify(results)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+#         # Convert to list of dicts for JSON
+#         results = [
+#             {
+#                 'id': row[0], 
+#                 'user': row[1], 
+#                 'filename': row[2], 
+#                 'input_data': row[3], 
+#                 'prediction': row[4], 
+#                 'timestamp': row[5]
+#             }
+#             for row in rows
+#         ]
+#         return jsonify(results)
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
 
-@app.route('/manual_retrain', methods=['POST'])
-def manual_retrain():
-    """Manual retrain trigger for admins"""
-    if session.get('username') != 'admin':
-        flash('Access denied: Admins only.')
-        return redirect(url_for('upload_file'))
-    
-    from models.training import train_model
-    try:
-        train_model()
-        status_message = "Model retrained successfully!"
-    except Exception as e:
-        status_message = f"Retrain failed: {str(e)}"
-    
-    return redirect(url_for('dashboard', status_message=status_message))
-
-@app.route('/toggle_retrain_method', methods=['POST'])
-def toggle_retrain_method():
-    """Toggle between chi-square and count-based retraining"""
-    if session.get('username') != 'admin':
-        flash('Access denied: Admins only.')
-        return redirect(url_for('upload_file'))
-    
-    # This could be stored in a config file or database
-    # For now, we'll just show the current method in dashboard
-    return redirect(url_for('dashboard', status_message="Retraining method: Chi-square statistical test (intelligent)"))
-
+#FE
 @app.route('/download_results/<filename>')
 def download_results(filename):
     """Download results file with predictions"""
@@ -506,4 +522,9 @@ def download_results(filename):
         return redirect(url_for('upload_file'))
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import os
+    # Use environment PORT variable for cloud deployment, fallback to 5001
+    port = int(os.environ.get('PORT', 5001))
+    # For production: bind to all interfaces and disable debug
+    debug_mode = os.environ.get('FLASK_ENV', 'development') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)

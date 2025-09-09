@@ -1,70 +1,85 @@
-"""
-STUDENT DEPRESSION PREDICTION - MACHINE LEARNING MODEL TRAINING
-
-IMBALANCED DATASET HANDLING IMPLEMENTATION:
-===========================================
-
-This module demonstrates proper handling of imbalanced datasets using CLASS WEIGHTS.
-
-PROBLEM: The depression dataset has class imbalance (41% vs 59% distribution)
-SOLUTION: Class Weights method is applied to both Logistic Regression and Random Forest
-
-CLASS WEIGHTS TECHNIQUE:
-- Automatically calculates inverse frequency weights for each class
-- Gives higher importance to minority class during training  
-- Prevents model bias toward majority class
-- No data loss or artificial sample generation required
-- Computationally efficient and suitable for mild imbalance
-
-IMPLEMENTATION DETAILS:
-- Uses sklearn's 'balanced' class_weight parameter
-- Applied to both RandomForestClassifier and LogisticRegression
-- Weights calculated as: n_samples / (n_classes * np.bincount(y))
-- Results in better recall for minority class detection
-
-METHOD SELECTION RATIONALE:
-- Class weights chosen for its simplicity and effectiveness
-- No external dependencies required (built into scikit-learn)
-- Efficient for mild imbalance scenarios like ours (1.41:1 ratio)
-- Production-ready and well-established technique
-
-AUTHOR: Student Implementation for Academic Project
-"""
-
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import numpy as np
 import re
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.linear_model import LogisticRegression
-
-def safe_roc_auc(y_true, y_proba):
-    """
-    Safe ROC-AUC calculation that handles edge cases.
-    Returns NaN if both classes are not present in y_true or if calculation fails.
-    """
-    try:
-        if len(np.unique(y_true)) == 2:
-            return roc_auc_score(y_true, y_proba)
-        else:
-            return float('nan')
-    except Exception as e:
-        return float('nan')
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
-# Class weights are the only method needed for this implementation
+from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 import joblib
 import subprocess
 import shutil
 import os
+from scipy.stats import chi2_contingency
+from datetime import datetime
+# Import centralized configuration - handle path properly
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import config
+
+def validate_and_clean_data(df):
+    """
+    Validate and clean uploaded data before processing.
+    
+    Args:
+        df: pandas DataFrame from uploaded CSV
+        
+    Returns:
+        cleaned DataFrame
+        
+    Raises:
+        ValueError: if data has critical issues
+    """
+    try:
+        # Make a copy to avoid modifying original
+        cleaned_df = df.copy()
+        
+        # Basic validation
+        if cleaned_df.empty:
+            raise ValueError("Uploaded file is empty")
+        
+        # Remove completely empty rows and columns
+        cleaned_df = cleaned_df.dropna(how='all').dropna(axis=1, how='all')
+        
+        # Handle numeric columns - convert strings to numbers where possible
+        for col in cleaned_df.columns:
+            if col not in ['id']:  # Skip ID column
+                try:
+                    # Try to convert to numeric, keep as object if not possible
+                    numeric_series = pd.to_numeric(cleaned_df[col], errors='coerce')
+                    # Only convert if most values are successfully converted
+                    if numeric_series.notna().sum() / len(cleaned_df) > 0.7:
+                        cleaned_df[col] = numeric_series
+                except:
+                    pass
+        
+        # Basic range validation for numeric columns using config limits
+        validation_limits = config.get_validation_limits()
+        for col in cleaned_df.select_dtypes(include=[np.number]).columns:
+            if col not in ['id']:
+                # Remove obvious outliers using configured ranges
+                if 'age' in col.lower():
+                    age_min, age_max = validation_limits['age']
+                    cleaned_df[col] = cleaned_df[col].clip(age_min, age_max)
+                elif 'sleep' in col.lower():
+                    sleep_min, sleep_max = validation_limits['sleep']
+                    cleaned_df[col] = cleaned_df[col].clip(sleep_min, sleep_max)
+                elif 'stress' in col.lower():
+                    stress_min, stress_max = validation_limits['stress']
+                    cleaned_df[col] = cleaned_df[col].clip(stress_min, stress_max)
+        
+        return cleaned_df
+        
+    except Exception as e:
+        # If validation fails, return original data with warning
+        print(f"Data validation warning: {e}")
+        return df
 
 def handle_class_imbalance(X, y, method='class_weight', random_state=42):
     """
-    Handle class imbalance using CLASS WEIGHTS technique.
+    Handle class imbalance using class weights technique.
     
     This function applies class weights to balance the importance of 
     minority vs majority classes during model training.
@@ -72,59 +87,24 @@ def handle_class_imbalance(X, y, method='class_weight', random_state=42):
     Returns: X, y, class_weights_dict (or None if single class)
     """
     classes = np.unique(y)
+    if len(classes) < 2:
+        # Degenerate case: no real weighting possible with single class
+        return X, y, None
+    
     if method == 'class_weight':
-        if len(classes) < 2:
-            # Degenerate case: no real weighting possible with single class
-            return X, y, None
+        # Calculate class weights for balanced training
         weights = compute_class_weight('balanced', classes=classes, y=y)
-        return X, y, dict(zip(classes, weights))
+        class_weight_dict = dict(zip(classes, weights))
+        return X, y, class_weight_dict
+    
+    elif method == 'none':
+        return X, y, None
+    
     else:
-        # Default fallback remains the same
-        weights = compute_class_weight('balanced', classes=classes, y=y) if len(classes) >= 2 else None
-        return X, y, dict(zip(classes, weights)) if weights is not None else (X, y, None)
-
-def create_preprocessing_pipeline(categorical_features, numerical_features):
-    """
-    Create a robust preprocessing pipeline using sklearn transformers.
-    
-    This pipeline handles:
-    - Missing value imputation
-    - Categorical encoding with unknown value handling
-    - Numerical scaling
-    
-    Returns: ColumnTransformer for preprocessing
-    """
-    # Numerical preprocessing: impute missing values, then scale
-    numerical_transformer = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='median')),
-        ('scaler', StandardScaler())
-    ])
-    
-    # Categorical preprocessing: impute missing values, then one-hot encode
-    categorical_transformer = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='constant', fill_value='unknown')),
-        ('encoder', OneHotEncoder(handle_unknown='ignore', drop='first'))
-    ])
-    
-    # Combine preprocessing steps
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ('num', numerical_transformer, numerical_features),
-            ('cat', categorical_transformer, categorical_features)
-        ])
-    
-    return preprocessor
-
-def create_model_pipeline(model, preprocessor):
-    """
-    Create a complete ML pipeline with preprocessing + model.
-    
-    This ensures preprocessing consistency between training and prediction.
-    """
-    return Pipeline([
-        ('preprocessor', preprocessor),
-        ('classifier', model)
-    ])
+        # Default to class weights for any other method
+        weights = compute_class_weight('balanced', classes=classes, y=y)
+        class_weight_dict = dict(zip(classes, weights))
+        return X, y, class_weight_dict
 
 def check_class_imbalance(y, threshold=0.3):
     """
@@ -147,38 +127,46 @@ def check_class_imbalance(y, threshold=0.3):
     
     return is_imbalanced, minority_ratio, imbalance_info
 
-def train_model(imbalance_method='class_weight'):
+def train_model(imbalance_method='auto'):
     """
     Complete training pipeline - trains model from scratch on all available data
-    
-    IMBALANCED DATASET HANDLING:
-    This function explicitly uses CLASS WEIGHTS to handle imbalanced datasets.
-    Class weights automatically balance the importance of minority vs majority classes
-    during training, ensuring fair model performance across all classes.
-    
-    METHOD: Class Weights (sklearn's 'balanced' parameter)
-    - Calculates inverse frequency weights for each class
-    - Gives higher importance to minority class samples
-    - No data resampling required (efficient)
-    - Works well for mild to moderate imbalance
+    Always handles class imbalance automatically for better model performance.
+    ONLY trains on human-verified labels, never on model predictions.
     """
-    # Load dataset
-    data = pd.read_csv('models/student_depression_dataset.csv')
+    # Load dataset using config
+    data = pd.read_csv(config.get_data_path())
 
-    # Only use rows with a label for retraining
-    data = data.dropna(subset=['Depression'])
+    # CRITICAL: Only use rows with REAL human-verified labels (not model predictions)
+    # Never train on model's own predictions to avoid feedback loops
+    verified_data = data.dropna(subset=['Depression'])
+    
+    # Additional safety: exclude any rows that might have been auto-labeled
+    # If Depression_Pred exists, it means these were model predictions
+    if 'Depression_Pred' in data.columns:
+        # Only use rows where Depression was NOT predicted (i.e., real ground truth)
+        verified_data = verified_data[verified_data['Depression_Pred'].isna() | 
+                                    (verified_data['Depression'] != verified_data['Depression_Pred'])]
+    
+    min_samples = config.get_training_params()['min_training_samples']
+    if len(verified_data) < min_samples:
+        raise ValueError(f"Insufficient verified training data. Need at least {min_samples} human-labeled samples.")
 
     #DATA CLEANING
+    # Use verified data instead of all data
+    data = verified_data.copy()
+    
     # Convert 'Depression' to integer (if not already)
     data['Depression'] = data['Depression'].astype(int)
     
-    # IMBALANCED DATASET HANDLING - CLASS WEIGHTS METHOD
     # Check for class imbalance early in the pipeline
     y_initial = data['Depression']
     is_imbalanced, minority_ratio, imbalance_info = check_class_imbalance(y_initial)
     
-    # Force class weights method for clear demonstration
-    imbalance_method = 'class_weight'
+    # Auto-select imbalance handling method using config
+    training_params = config.get_training_params()
+    if imbalance_method == 'auto':
+        # Use configured default method
+        imbalance_method = training_params['imbalance_method']
 
     # Dynamically identify categorical columns (non-numeric columns)
     # Exclude target variable and ID from categorical conversion
@@ -207,124 +195,113 @@ def train_model(imbalance_method='class_weight'):
         match = re.search(r"(\d+(\.\d+)?)", str(s))
         return float(match.group(1)) if match else np.nan
 
-    # Clean Sleep Duration column
-    if 'Sleep Duration' in data.columns:
-        data['Sleep Duration'] = data['Sleep Duration'].apply(extract_hours)
+    data['Sleep Duration'] = data['Sleep Duration'].apply(extract_hours)
 
-    # DATA CLEANING: Fix data quality issues
-    # Clean Gender column (remove numeric values that shouldn't be there)
-    if 'Gender' in data.columns:
-        # Keep only 'Male' and 'Female', replace others with mode
-        valid_genders = ['Male', 'Female']
-        gender_mode = data[data['Gender'].isin(valid_genders)]['Gender'].mode()
-        if len(gender_mode) > 0:
-            data.loc[~data['Gender'].isin(valid_genders), 'Gender'] = gender_mode[0]
-        else:
-            data.loc[~data['Gender'].isin(valid_genders), 'Gender'] = 'Unknown'
-    
-    # Clean Age column (should be numeric)
-    if 'Age' in data.columns:
-        # Convert Age to numeric, replacing non-numeric with NaN
-        data['Age'] = pd.to_numeric(data['Age'], errors='coerce')
-        # Fill missing ages with median
-        data['Age'] = data['Age'].fillna(data['Age'].median())    
-    # Automatically identify categorical and numerical features AFTER cleaning
-    exclude_cols = ['Depression', 'id']
-    
-    # Identify categorical columns
-    categorical_features = []
-    numerical_features = []
-    
-    for col in data.columns:
-        if col not in exclude_cols:
-            # Check if column is clearly textual/categorical
-            if (data[col].dtype == 'object' or 
-                data[col].dtype.name == 'category'):
-                categorical_features.append(col)
-            else:
-                # All numeric columns are numerical features
-                numerical_features.append(col)
+    # Convert Financial Stress to categorical if it represents levels (e.g., Low, Medium, High)
+    data['Financial Stress'] = data['Financial Stress'].astype('category')
 
+    # Verify changes
+    # data[['Sleep Duration', 'Financial Stress']].head()
+
+     #Display missing values per column
+    missing_values = data.isnull().sum()
+    # print("Missing values:\n", missing_values)
+    
+    # Dynamically impute missing values for numerical columns with median
+    numeric_cols = data.select_dtypes(include=[np.number]).columns
+    for col in numeric_cols:
+        if col not in ['Depression', 'id'] and data[col].isnull().sum() > 0:
+            data[col] = data[col].fillna(data[col].median())
+
+    #Feature Engineering
+    # Dynamically identify categorical columns for encoding
+    # Get all categorical columns except target variable
+    cat_features = [col for col in categorical_cols if col in data.columns and col != 'Depression']
+
+    # Use one-hot encoding on identified categorical features
+    data_encoded = pd.get_dummies(data, columns=cat_features, drop_first=True)
+
+    #----------------------------------
+    #Model Building
+
+    #----------------------------------
+    # Feature Selection
+    #---------------------------------- 
+    # Drop unwanted columns from the original dataframe
+    # 'id' is excluded because it's not a predictive feature (just an identifier)
+    # 'Depression' is the target variable
+    # Other categorical columns will be encoded separately
+    # Dynamically prepare feature matrix by dropping non-feature columns
+    non_feature_cols = ['id', 'Depression']
+    
     # Prepare feature matrix (X) and target variable (y)
-    X = data.drop(columns=exclude_cols, errors='ignore')
+    X = data_encoded.drop(columns=non_feature_cols, errors='ignore')
     y = data['Depression']
 
-    # Create preprocessing pipeline
-    preprocessor = create_preprocessing_pipeline(categorical_features, numerical_features)
+    # Dynamically standardize numerical features
+    scaler = StandardScaler()
+    # Identify numerical columns in the feature matrix (excluding encoded categorical features)
+    numeric_features = X.select_dtypes(include=[np.number]).columns.tolist()
+    # Exclude dummy/encoded categorical columns (they typically have _suffix)
+    numeric_features = [col for col in numeric_features if not any(suffix in col for suffix in ['_Yes', '_No', '_Male', '_Female', '_True', '_False'])]
+    
+    if numeric_features:
+        X[numeric_features] = scaler.fit_transform(X[numeric_features])
 
-    # Split Data into Training and Testing Sets (with stratification to preserve class distribution)
+    #---------------------------------- 
+    # Split Data into Training and Testing Sets using config parameters
+    training_params = config.get_training_params()
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+        X, y, 
+        test_size=training_params['test_size'], 
+        random_state=training_params['random_state']
     )
 
-    # HANDLE CLASS IMBALANCE USING CLASS WEIGHTS
-    # This demonstrates explicit handling of imbalanced datasets
+    # Handle class imbalance on training data
     X_train_balanced, y_train_balanced, class_weights = handle_class_imbalance(
         X_train, y_train, method=imbalance_method, random_state=42
     )
 
-    # MODELS WITH CLASS WEIGHTS FOR IMBALANCED DATA
-    # Create Logistic Regression pipeline
-    log_model = LogisticRegression(max_iter=1000, class_weight=class_weights or 'balanced')
-    log_pipeline = create_model_pipeline(log_model, preprocessor)
-    log_pipeline.fit(X_train_balanced, y_train_balanced)
+    # Logistic Regression with class weights if applicable
+    if class_weights is not None:
+        log_model = LogisticRegression(
+            max_iter=training_params['logistic_max_iter'], 
+            class_weight=class_weights
+        )
+    else:
+        log_model = LogisticRegression(max_iter=training_params['logistic_max_iter'])
     
-    # Predictions and evaluation for Logistic Regression
-    y_pred_log = log_pipeline.predict(X_test)
-    y_pred_proba_log = log_pipeline.predict_proba(X_test)[:, 1]  # For ROC-AUC
+    log_model.fit(X_train_balanced, y_train_balanced)
+    # Predictions and evaluation
+    y_pred_log = log_model.predict(X_test)
 
-    # Create Random Forest pipeline
-    rf_model = RandomForestClassifier(n_estimators=100, random_state=42, 
-                                    class_weight=class_weights or 'balanced')
-    rf_pipeline = create_model_pipeline(rf_model, preprocessor)
-    rf_pipeline.fit(X_train_balanced, y_train_balanced)
+    # Random Forest Classifier with class weights if applicable
+    if class_weights is not None:
+        rf_model = RandomForestClassifier(
+            n_estimators=training_params['rf_n_estimators'], 
+            random_state=training_params['random_state'], 
+            class_weight=class_weights
+        )
+    else:
+        rf_model = RandomForestClassifier(
+            n_estimators=training_params['rf_n_estimators'], 
+            random_state=training_params['random_state']
+        )
     
-    # Predictions and evaluation for Random Forest
-    y_pred_rf = rf_pipeline.predict(X_test)
-    y_pred_proba_rf = rf_pipeline.predict_proba(X_test)[:, 1]  # For ROC-AUC
+    rf_model.fit(X_train_balanced, y_train_balanced)
+    # Predictions and evaluation
+    y_pred_rf = rf_model.predict(X_test)
 
-    # Model Performance Tracking: Save metrics to file for dashboard
+    # Model Performance Tracking: Save metrics using config paths
     from sklearn.metrics import accuracy_score, f1_score
-    
-    # Calculate metrics for both models
-    log_accuracy = accuracy_score(y_test, y_pred_log)
-    log_f1 = f1_score(y_test, y_pred_log)
-    log_roc_auc = safe_roc_auc(y_test, y_pred_proba_log)
-    
-    rf_accuracy = accuracy_score(y_test, y_pred_rf)
-    rf_f1 = f1_score(y_test, y_pred_rf)
-    rf_roc_auc = safe_roc_auc(y_test, y_pred_proba_rf)
-    
-    # Ensure directories exist before writing files
-    os.makedirs('logs', exist_ok=True)
-    os.makedirs('models', exist_ok=True)
-    
-    # Save comprehensive metrics
-    metrics_path = 'logs/model_metrics.txt'
+    metrics_path = config.get_metrics_path()
     with open(metrics_path, 'w') as f:
-        # Random Forest metrics (primary model)
-        f.write('=== RANDOM FOREST PIPELINE RESULTS ===\n')
+        f.write('Random Forest Classification Report:\n')
         f.write(classification_report(y_test, y_pred_rf))
         f.write('\nRandom Forest Confusion Matrix:\n')
         f.write(str(confusion_matrix(y_test, y_pred_rf)))
-        f.write(f"\nAccuracy: {rf_accuracy:.4f}\n")
-        f.write(f"F1 Score: {rf_f1:.4f}\n")
-        f.write(f"ROC-AUC: {rf_roc_auc:.4f if not np.isnan(rf_roc_auc) else 'N/A (single class in test set)'}\n")
-        
-        # Logistic Regression metrics
-        f.write('\n=== LOGISTIC REGRESSION PIPELINE RESULTS ===\n')
-        f.write(classification_report(y_test, y_pred_log))
-        f.write('\nLogistic Regression Confusion Matrix:\n')
-        f.write(str(confusion_matrix(y_test, y_pred_log)))
-        f.write(f"\nAccuracy: {log_accuracy:.4f}\n")
-        f.write(f"F1 Score: {log_f1:.4f}\n")
-        f.write(f"ROC-AUC: {log_roc_auc:.4f if not np.isnan(log_roc_auc) else 'N/A (single class in test set)'}\n")
-        
-        # Clinical interpretation
-        f.write(f"\n=== CLINICAL EVALUATION ===\n")
-        f.write(f"ROC-AUC measures diagnostic accuracy (0.5=random, 1.0=perfect)\n")
-        f.write(f"F1-Score balances precision/recall for depression detection\n")
-        f.write(f"Preferred model: {'Random Forest' if rf_f1 >= log_f1 else 'Logistic Regression'}\n")
+        f.write(f"\nAccuracy: {accuracy_score(y_test, y_pred_rf):.4f}\n")
+        f.write(f"F1 Score: {f1_score(y_test, y_pred_rf):.4f}\n")
         
         # Add class imbalance information
         f.write(f"\n=== Class Imbalance Handling ===\n")
@@ -338,95 +315,93 @@ def train_model(imbalance_method='class_weight'):
             train_dist = pd.Series(y_train_balanced).value_counts().sort_index()
             f.write(f"Training data after balancing: {train_dist.to_dict()}\n")
 
-    # Save both model pipelines for production use
-    joblib.dump(rf_pipeline, 'models/rf_model.pkl')
-    joblib.dump(log_pipeline, 'models/log_model.pkl')
+    # Save the trained model and preprocessing info using config paths
+    joblib.dump(rf_model, config.get_model_path())
     
-    return rf_pipeline, log_pipeline  # Return both trained pipelines
+    # Calculate performance metrics for auto-tuning
+    accuracy = accuracy_score(y_test, y_pred_rf)
+    f1 = f1_score(y_test, y_pred_rf)
+    
+    # Save preprocessing information AND training metadata for prediction pipeline
+    training_metadata = {
+        'training_timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'training_data_rows': len(data),
+        'last_training_row_id': data['id'].max() if 'id' in data.columns else len(data),
+        'feature_columns_used': list(X.columns),
+        'verified_labels_only': True,  # Flag to indicate we only used verified labels
+        'model_version': '1.0',
+        'performance': {'accuracy': accuracy, 'f1_score': f1}
+    }
+    
+    preprocessing_info = {
+        'scaler': scaler,
+        'categorical_cols': categorical_cols,
+        'numeric_features': numeric_features,
+        'feature_columns': list(X.columns),
+        'class_weights': class_weights,
+        'training_metadata': training_metadata
+    }
+    joblib.dump(preprocessing_info, config.get_preprocessing_path())
+    
+    # Record performance for auto-tuning
+    config.record_performance(
+        accuracy=accuracy,
+        f1_score=f1,
+        retrain_triggered=True,  # This training was triggered
+        samples_added=len(verified_data),
+        method_used=imbalance_method
+    )
+    
+    return rf_model  # Return the trained model if needed
 
-def fetch_from_kaggle(dataset="ngocdung/student-depression-dataset", filename="student_depression_dataset.csv", dest_path="models/student_depression_dataset.csv"):
+def should_retrain(threshold=None):
     """
-    Fetches the latest dataset from Kaggle using the CLI. Falls back to local backup if Kaggle fetch fails.
-    Returns a status message.
+    Check if model should be retrained based on new VERIFIED data availability
+    Only counts human-verified labels, never model predictions
     """
+    if threshold is None:
+        threshold = config.get_retrain_threshold()
+    
     try:
-        # Download using Kaggle CLI
-        kaggle_cmd = [
-            "kaggle", "datasets", "download", "-d", dataset, "-f", filename, "-p", "models", "--force"
-        ]
-        result = subprocess.run(kaggle_cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode != 0:
-            raise Exception(result.stderr)
-        # Unzip if needed
-        zip_path = os.path.join("models", filename.replace(".csv", ".zip"))
-        if os.path.exists(zip_path):
-            import zipfile
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall("models")
-            os.remove(zip_path)
-        # Check if file exists
-        if not os.path.exists(dest_path):
-            raise Exception("Kaggle download did not produce the expected file.")
-        return "Successfully fetched latest dataset from Kaggle."
-    except Exception as e:
-        # Fallback: try to restore from latest backup
-        version_dir = "models/versions"
-        backups = sorted([f for f in os.listdir(version_dir) if f.endswith('.csv')], reverse=True)
-        if backups:
-            latest_backup = os.path.join(version_dir, backups[0])
-            shutil.copy2(latest_backup, dest_path)
-            return f"Kaggle fetch failed ({str(e)}). Restored from latest backup: {backups[0]}"
-        else:
-            return f"Kaggle fetch failed ({str(e)}). No backup available."
-
-def restore_backup(backup_file, dest_path="models/student_depression_dataset.csv"):
-    """
-    Restores the master dataset from a selected backup file.
-    Returns a status message.
-    """
-    try:
-        version_dir = "models/versions"
-        backup_path = os.path.join(version_dir, backup_file)
-        if not os.path.exists(backup_path):
-            return f"Backup file {backup_file} not found."
-        shutil.copy2(backup_path, dest_path)
-        return f"Successfully restored dataset from backup: {backup_file}"
-    except Exception as e:
-        return f"Failed to restore backup: {str(e)}"
-
-def should_retrain(threshold=50):
-    """
-    Check if model should be retrained based on new data availability
-    """
-    try:
-        master_path = 'models/student_depression_dataset.csv'
+        master_path = config.get_data_path()
         if not os.path.exists(master_path):
             return False
         
         df = pd.read_csv(master_path)
-        current_count = df.dropna(subset=['Depression']).shape[0]
         
-        # Get last retrain count
-        config_path = 'logs/retrain_config.txt'
-        last_count = 0
-        if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
-                last_count = int(f.read().strip())
+        # CRITICAL: Only count rows with VERIFIED labels (not model predictions)
+        verified_df = df.dropna(subset=['Depression'])
         
-        return (current_count - last_count) >= threshold
+        # Additional safety: exclude rows that were auto-labeled by our model
+        if 'Depression_Pred' in df.columns:
+            # Only count rows where Depression was NOT predicted (i.e., real ground truth)
+            verified_df = verified_df[verified_df['Depression_Pred'].isna() | 
+                                    (verified_df['Depression'] != verified_df['Depression_Pred'])]
+        
+        current_verified_count = len(verified_df)
+        
+        # Get last retrain count from training metadata
+        try:
+            preprocessing_info = joblib.load(config.get_preprocessing_path())
+            training_metadata = preprocessing_info.get('training_metadata', {})
+            last_count = training_metadata.get('training_data_rows', 0)
+        except:
+            # Fallback to old config method
+            config_path = config.get_retrain_config_path()
+            last_count = 0
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    last_count = int(f.read().strip())
+        
+        return (current_verified_count - last_count) >= threshold
     except:
         return False
 
 def trigger_retrain():
     """
-    Trigger function for F1-SCORE BASED performance monitoring.
-    
-    F1-score is the primary metric because:
-    - Better for imbalanced depression data
-    - Clinically more relevant than accuracy  
-    - Balances precision and recall for depression detection
+    Trigger function that decides when to retrain using performance monitoring
     """
-    if performance_based_retrain_test():
+    if should_retrain_smart(method='performance'):
         train_model()
         update_retrain_tracking()
         return True
@@ -436,41 +411,48 @@ def trigger_retrain():
 def update_retrain_tracking():
     """
     Update tracking information after retraining
+    Uses training metadata instead of simple count
     """
     try:
-        master_path = 'models/student_depression_dataset.csv'
+        # The tracking is now done in training metadata saved with preprocessing_info
+        # This function is kept for backward compatibility
+        master_path = config.get_data_path()
         if os.path.exists(master_path):
             df = pd.read_csv(master_path)
-            current_count = df.dropna(subset=['Depression']).shape[0]
             
-            config_path = 'logs/retrain_config.txt'
-            os.makedirs('logs', exist_ok=True)
+            # Count only verified labels
+            verified_df = df.dropna(subset=['Depression'])
+            if 'Depression_Pred' in df.columns:
+                verified_df = verified_df[verified_df['Depression_Pred'].isna() | 
+                                        (verified_df['Depression'] != verified_df['Depression_Pred'])]
+            
+            current_verified_count = len(verified_df)
+            
+            config_path = config.get_retrain_config_path()
+            os.makedirs(os.path.dirname(config_path), exist_ok=True)
             with open(config_path, 'w') as f:
-                f.write(str(current_count))
+                f.write(str(current_verified_count))
     except Exception as e:
         pass
 
-def performance_based_retrain_test(f1_threshold=0.05, roc_auc_threshold=0.05):
+def chi_square_retrain_test(p_threshold=None):
     """
-    PERFORMANCE-BASED RETRAINING (F1-Score + ROC-AUC Focus)
-    
-    Determines if retraining is needed based on F1-score and ROC-AUC degradation.
-    Both metrics are clinically meaningful for depression prediction:
-    - F1-score: Balances precision and recall
-    - ROC-AUC: Measures diagnostic accuracy across all thresholds
-    
-    Returns True if F1 score or ROC-AUC drops significantly
+    Use chi-square test to determine if new data distribution differs significantly 
+    from training data, indicating need for retraining
     """
+    if p_threshold is None:
+        p_threshold, _ = config.get_drift_thresholds()
+        
     try:
-        master_path = 'models/student_depression_dataset.csv'
-        if not os.path.exists(master_path) or not os.path.exists('models/rf_model.pkl'):
+        master_path = config.get_data_path()
+        if not os.path.exists(master_path):
             return False
         
         df = pd.read_csv(master_path)
         labeled_df = df.dropna(subset=['Depression'])
         
-        # Get last retrain count
-        config_path = 'logs/retrain_config.txt'
+        # Get last retrain count to identify "new" vs "old" data
+        config_path = config.get_retrain_config_path()
         last_count = 0
         if os.path.exists(config_path):
             with open(config_path, 'r') as f:
@@ -478,55 +460,172 @@ def performance_based_retrain_test(f1_threshold=0.05, roc_auc_threshold=0.05):
         
         if len(labeled_df) <= last_count + 10:  # Need minimum new data
             return False
-        
-        # Get new data since last retrain
+            
+        # Split into old training data vs new data
+        old_data = labeled_df.iloc[:last_count]
         new_data = labeled_df.iloc[last_count:]
         
-        if len(new_data) < 10:  # Need minimum samples for reliable test
+        # Test on categorical features
+        categorical_cols = []
+        for col in df.columns:
+            if col not in ['Depression', 'id'] and df[col].dtype == 'object':
+                categorical_cols.append(col)
+        
+        significant_changes = 0
+        total_tests = 0
+        
+        for col in categorical_cols:
+            if col in old_data.columns and col in new_data.columns:
+                # Create contingency table
+                old_counts = old_data[col].value_counts()
+                new_counts = new_data[col].value_counts()
+                
+                # Align indices (same categories)
+                all_categories = set(old_counts.index) | set(new_counts.index)
+                old_aligned = [old_counts.get(cat, 0) for cat in all_categories]
+                new_aligned = [new_counts.get(cat, 0) for cat in all_categories]
+                
+                # Skip if too few samples
+                if sum(old_aligned) < 5 or sum(new_aligned) < 5:
+                    continue
+                    
+                # Chi-square test
+                contingency_table = np.array([old_aligned, new_aligned])
+                if contingency_table.sum() > 0:
+                    chi2, p_value, dof, expected = chi2_contingency(contingency_table)
+                    total_tests += 1
+                    
+                    if p_value < p_threshold:
+                        significant_changes += 1
+        
+        # Retrain if significant portion of features show distribution shift
+        if total_tests > 0 and (significant_changes / total_tests) >= 0.3:
+            return True
+            
+        return False
+        
+    except Exception as e:
+        # Fallback to count-based method
+        return should_retrain()
+
+def check_scipy_dependency():
+    """Check if scipy is available for chi-square test"""
+    try:
+        from scipy.stats import chi2_contingency
+        return True
+    except ImportError:
+        return False
+
+def should_retrain_smart(method='hybrid', count_threshold=None):
+    """
+    Smart retraining decision with multiple methods:
+    - 'distribution': Chi-square test on data distribution changes
+    - 'performance': Model performance degradation (accuracy/F1 drop)
+    - 'hybrid': Both distribution and performance checks
+    - 'count': Traditional count-based threshold
+    """
+    if count_threshold is None:
+        count_threshold = config.get_retrain_threshold()
+        
+    if not check_scipy_dependency():
+        return should_retrain(count_threshold)
+    
+    if method == 'distribution':
+        return chi_square_retrain_test() or should_retrain(count_threshold)
+    elif method == 'performance':
+        return performance_based_retrain_test() or should_retrain(count_threshold)
+    elif method == 'hybrid':
+        return should_retrain_hybrid()
+    else:  # count method
+        return should_retrain(count_threshold)
+
+def performance_based_retrain_test(performance_threshold=None):
+    """
+    Use model performance degradation to determine if retraining is needed
+    Compare current predictions vs VERIFIED labels only (never model predictions)
+    """
+    if performance_threshold is None:
+        performance_threshold = config.get_performance_threshold()
+        
+    try:
+        master_path = config.get_data_path()
+        model_path = config.get_model_path()
+        if not os.path.exists(master_path) or not os.path.exists(model_path):
             return False
         
-        # Load current model pipeline
-        model_pipeline = joblib.load('models/rf_model.pkl')
+        df = pd.read_csv(master_path)
         
-        # Prepare features for prediction
-        X_new = new_data.drop(columns=['id', 'Depression'], errors='ignore')
-        y_true = new_data['Depression'].astype(int)
+        # CRITICAL: Only use rows with VERIFIED labels (never model predictions)
+        verified_df = df.dropna(subset=['Depression'])
         
-        # Make predictions using the pipeline (handles preprocessing automatically)
+        # Additional safety: exclude rows that were auto-labeled by our model
+        if 'Depression_Pred' in df.columns:
+            # Only use rows where Depression was NOT predicted (i.e., real ground truth)
+            verified_df = verified_df[verified_df['Depression_Pred'].isna() | 
+                                    (verified_df['Depression'] != verified_df['Depression_Pred'])]
+        
+        # Get training metadata to know what was used for last training
         try:
-            y_pred = model_pipeline.predict(X_new)
-            y_pred_proba = model_pipeline.predict_proba(X_new)[:, 1]
-        except Exception as e:
+            preprocessing_info = joblib.load(config.get_preprocessing_path())
+            training_metadata = preprocessing_info.get('training_metadata', {})
+            last_training_row_id = training_metadata.get('last_training_row_id', 0)
+        except:
+            # Fallback: use retrain config
+            config_path = config.get_retrain_config_path()
+            last_training_row_id = 0
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    last_training_row_id = int(f.read().strip())
+        
+        if len(verified_df) <= last_training_row_id + 10:  # Need minimum new verified data
             return False
         
-        # Calculate performance metrics - Focus on F1-score and ROC-AUC for depression prediction
+        # Get new VERIFIED data since last retrain
+        if 'id' in verified_df.columns:
+            new_verified_data = verified_df[verified_df['id'] > last_training_row_id]
+        else:
+            new_verified_data = verified_df.iloc[last_training_row_id:]
+        
+        if len(new_verified_data) < 10:  # Need minimum samples for reliable test
+            return False
+        
+        # Load current model
+        model = joblib.load(config.get_model_path())
+        
+        # Prepare features (minimal preprocessing for performance test)
+        # Note: This is a simplified version - in production you'd want full preprocessing
+        X_new = new_verified_data.drop(columns=['id', 'Depression'], errors='ignore')
+        
+        # Handle categorical columns - convert to same format as training
+        for col in X_new.columns:
+            if X_new[col].dtype == 'object':
+                X_new[col] = X_new[col].astype('category')
+        
+        # Simple encoding for categorical columns (basic version)
+        X_new_encoded = pd.get_dummies(X_new, drop_first=True)
+        
+        y_true = new_verified_data['Depression'].astype(int)
+        
+        # Make predictions
+        try:
+            y_pred = model.predict(X_new_encoded)
+        except Exception:
+            # If prediction fails due to feature mismatch, fallback to count-based
+            return False
+        
+        # Calculate performance metrics
         from sklearn.metrics import accuracy_score, f1_score
         current_accuracy = accuracy_score(y_true, y_pred)
         current_f1 = f1_score(y_true, y_pred)
-        current_roc_auc = safe_roc_auc(y_true, y_pred_proba)
         
         # Get baseline performance from last training
-        baseline_accuracy, baseline_f1, baseline_roc_auc = get_baseline_performance()
+        baseline_accuracy, baseline_f1 = get_baseline_performance()
         
-        # Handle case where no baseline exists (first run or error)
-        if baseline_accuracy is None or baseline_f1 is None or baseline_roc_auc is None:
-            return False  # Don't retrain if we can't compare performance
-        
-        # Calculate performance drops (handle NaN values safely)
-        f1_drop = baseline_f1 - current_f1
+        # Check if performance dropped significantly
         accuracy_drop = baseline_accuracy - current_accuracy
-        roc_auc_drop = baseline_roc_auc - current_roc_auc if not (np.isnan(baseline_roc_auc) or np.isnan(current_roc_auc)) else 0
+        f1_drop = baseline_f1 - current_f1
         
-        # Primary trigger: F1-score drop (most important for depression detection)
-        if f1_drop > f1_threshold:
-            return True
-        
-        # Secondary trigger: ROC-AUC drop (diagnostic accuracy) - only if valid ROC-AUC values
-        if not np.isnan(roc_auc_drop) and roc_auc_drop > roc_auc_threshold:
-            return True
-        
-        # Tertiary trigger: Severe accuracy drop (backup check)    
-        if accuracy_drop > 0.10:  # 10% accuracy drop as backup
+        if accuracy_drop > performance_threshold or f1_drop > performance_threshold:
             return True
             
         return False
@@ -535,92 +634,124 @@ def performance_based_retrain_test(f1_threshold=0.05, roc_auc_threshold=0.05):
         return False
 
 def get_baseline_performance():
-    """Get baseline performance metrics from last training (including ROC-AUC)"""
+    """Get baseline performance metrics from last training"""
     try:
-        metrics_path = 'logs/model_metrics.txt'
+        metrics_path = config.get_metrics_path()
         if os.path.exists(metrics_path):
             with open(metrics_path, 'r') as f:
                 content = f.read()
-                # Extract accuracy, F1, and ROC-AUC from saved metrics
+                # Extract accuracy and F1 from saved metrics
                 import re
-                # Look for Random Forest metrics (primary model)
-                accuracy_match = re.search(r'=== RANDOM FOREST.*?Accuracy: ([\d.]+)', content, re.DOTALL)
-                f1_match = re.search(r'=== RANDOM FOREST.*?F1 Score: ([\d.]+)', content, re.DOTALL)
-                roc_auc_match = re.search(r'=== RANDOM FOREST.*?ROC-AUC: ([\d.]+)', content, re.DOTALL)
+                accuracy_match = re.search(r'Accuracy: ([\d.]+)', content)
+                f1_match = re.search(r'F1 Score: ([\d.]+)', content)
                 
-                if accuracy_match and f1_match and roc_auc_match:
-                    return (float(accuracy_match.group(1)), 
-                           float(f1_match.group(1)), 
-                           float(roc_auc_match.group(1)))
+                if accuracy_match and f1_match:
+                    return float(accuracy_match.group(1)), float(f1_match.group(1))
         
-        # If no metrics file exists, calculate baseline by retraining
-        train_model()  # This will create the metrics file
-        
-        # Try to read metrics again after training
-        if os.path.exists(metrics_path):
-            with open(metrics_path, 'r') as f:
-                content = f.read()
-                import re
-                accuracy_match = re.search(r'=== RANDOM FOREST.*?Accuracy: ([\d.]+)', content, re.DOTALL)
-                f1_match = re.search(r'=== RANDOM FOREST.*?F1 Score: ([\d.]+)', content, re.DOTALL)
-                roc_auc_match = re.search(r'=== RANDOM FOREST.*?ROC-AUC: ([\d.]+)', content, re.DOTALL)
-                
-                if accuracy_match and f1_match and roc_auc_match:
-                    return (float(accuracy_match.group(1)), 
-                           float(f1_match.group(1)), 
-                           float(roc_auc_match.group(1)))
-        
-        # If still no metrics, return None to indicate failure
-        return None, None, None
-    except Exception as e:
-        return None, None, None
+        # Default baseline if no metrics available
+        return 0.8, 0.8
+    except:
+        return 0.8, 0.8
 
-def calculate_current_model_performance():
+def should_retrain_hybrid(use_performance=True, use_distribution=True):
     """
-    Alternative approach: Calculate baseline by testing current model 
-    on a held-out validation set from existing data.
-    This avoids hard-coded defaults completely.
+    Hybrid approach: retrain based on both performance drop AND distribution changes
     """
-    try:
-        from sklearn.model_selection import train_test_split
-        from sklearn.metrics import accuracy_score, f1_score
+    performance_trigger = False
+    distribution_trigger = False
+    
+    if use_performance and check_scipy_dependency():
+        performance_trigger = performance_based_retrain_test()
+    
+    if use_distribution and check_scipy_dependency():
+        distribution_trigger = chi_square_retrain_test()
+    
+    # Retrain if either trigger fires
+    return performance_trigger or distribution_trigger or should_retrain(50)
+
+# def predict_depression(data_df):
+#     """
+#     Make predictions on new data using the trained model.
+    
+#     Args:
+#         data_df: pandas DataFrame with features (excluding Depression column)
         
-        # Load current dataset
-        data = pd.read_csv('models/student_depression_dataset.csv')
-        labeled_data = data.dropna(subset=['Depression'])
+#     Returns:
+#         predictions: list of 0/1 predictions
+#         probabilities: list of probability scores
+#     """
+#     try:
+#         # Load the model and preprocessing info
+#         model = joblib.load(config.get_model_path())
+#         preprocessing_info = joblib.load(config.get_preprocessing_path())
         
-        if len(labeled_data) < 100:  # Need sufficient data
-            return None, None
-            
-        # Prepare features (simplified preprocessing)
-        X = labeled_data.drop(['id', 'Depression'], axis=1, errors='ignore')
-        y = labeled_data['Depression'].astype(int)
+#         # Make a copy of input data
+#         df = data_df.copy()
         
-        # Simple preprocessing for validation
-        for col in X.columns:
-            if X[col].dtype == 'object':
-                # Convert categorical to numeric (basic approach)
-                X[col] = pd.Categorical(X[col]).codes
+#         # Remove ID column if present
+#         df = df.drop(columns=['id'], errors='ignore')
         
-        # Fill any missing values
-        X = X.fillna(X.median())
+#         # Apply the same preprocessing as training
+#         scaler = preprocessing_info['scaler']
+#         categorical_cols = preprocessing_info['categorical_cols']
+#         numeric_features = preprocessing_info['numeric_features']
         
-        # Split for validation
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+#         # Handle missing values and data types
+#         for col in df.columns:
+#             if col in categorical_cols:
+#                 df[col] = df[col].astype('category')
         
-        # Load current model
-        if not os.path.exists('models/rf_model.pkl'):
-            return None, None
-            
-        model = joblib.load('models/rf_model.pkl')
+#         # Extract numeric hours from Sleep Duration if present
+#         if 'Sleep Duration' in df.columns:
+#             def extract_hours(s):
+#                 match = re.search(r"(\d+(\.\d+)?)", str(s))
+#                 return float(match.group(1)) if match else np.nan
+#             df['Sleep Duration'] = df['Sleep Duration'].apply(extract_hours)
         
-        # Test current model on validation set
-        y_pred = model.predict(X_val)
+#         # Convert Financial Stress to categorical if present
+#         if 'Financial Stress' in df.columns:
+#             df['Financial Stress'] = df['Financial Stress'].astype('category')
         
-        accuracy = accuracy_score(y_val, y_pred)
-        f1 = f1_score(y_val, y_pred)
+#         # Impute missing values for numerical columns
+#         numeric_cols = df.select_dtypes(include=[np.number]).columns
+#         for col in numeric_cols:
+#             if df[col].isnull().sum() > 0:
+#                 df[col] = df[col].fillna(df[col].median())
         
-        return accuracy, f1
+#         # Get categorical features for encoding
+#         cat_features = [col for col in categorical_cols if col in df.columns]
         
-    except Exception as e:
-        return None, None
+#         # One-hot encode categorical features
+#         df_encoded = pd.get_dummies(df, columns=cat_features, drop_first=True)
+        
+#         # Standardize numerical features
+#         if numeric_features:
+#             # Only scale features that exist in both training and prediction data
+#             features_to_scale = [col for col in numeric_features if col in df_encoded.columns]
+#             if features_to_scale:
+#                 df_encoded[features_to_scale] = scaler.transform(df_encoded[features_to_scale])
+        
+#         # Ensure all training features are present
+#         training_features = preprocessing_info['feature_columns']
+#         missing_features = [col for col in training_features if col not in df_encoded.columns]
+        
+#         # Add missing columns efficiently using pd.concat instead of loop
+#         if missing_features:
+#             missing_df = pd.DataFrame(0, index=df_encoded.index, columns=missing_features)
+#             df_encoded = pd.concat([df_encoded, missing_df], axis=1)
+        
+#         # Select only training features in correct order
+#         df_final = df_encoded[training_features]
+        
+#         # Make predictions
+#         predictions = model.predict(df_final)
+#         probabilities = model.predict_proba(df_final)[:, 1]  # Probability of class 1 (Depression)
+        
+#         return predictions.tolist(), probabilities.tolist()
+        
+#     except Exception as e:
+#         print(f"Prediction error: {e}")
+#         # Fallback to simple rule-based prediction
+#         predictions = [0] * len(data_df)  # Default to no depression
+#         probabilities = [0.5] * len(data_df)  # Neutral probability
+#         return predictions, probabilities
