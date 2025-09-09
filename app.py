@@ -176,14 +176,6 @@ def upload_file():
                 if not log_exists:
                     writer.writerow(['user', 'filename', 'time'])
                 writer.writerow([session.get('username', 'unknown'), file.filename, current_time])
-            
-            # Check if we should retrain (batch-based)
-            try:
-                from models.training import trigger_retrain
-                trigger_retrain()  # This will only retrain if needed
-            except Exception as retrain_error:
-                # Log the error but don't fail the upload
-                flash(f'Note: Automatic retraining check failed: {str(retrain_error)}')
                 
             return redirect(url_for('predict', filename=file.filename))
     return render_template('upload.html', current_time=current_time)
@@ -288,6 +280,32 @@ def predict():
                          columns=list(df_with_predictions.columns),
                          depressed_count=pred_counts.get('Depressed', 0),
                          not_depressed_count=pred_counts.get('Not Depressed', 0))
+
+
+@app.route('/retrain_model', methods=['POST'])
+def retrain_model():
+
+    # """Endpoint to handle model retraining"""
+    # if session.get('username') != 'admin':
+    #     return jsonify({'success': False, 'message': 'Access denied: Admins only.'})
+    
+    # try:
+    #     from models.training import trigger_retrain
+    #     trigger_retrain()  # This will only retrain if needed
+    # except Exception as retrain_error:
+    #     # Log the error but don't fail the upload
+    #     flash(f'Note: Retraining failed: {str(retrain_error)}')
+    
+    try:
+        from models.training import trigger_retrain
+        trigger_retrain()
+        return jsonify({
+            'success': True, 
+            'message': 'Model retrained successfully! Dashboard will refresh to show updated metrics.'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Retraining failed: {str(e)}'})
+
 
 #BE
 @app.route('/student_depression_template.csv')

@@ -413,30 +413,3 @@
     </script>
 </body>
 </html>
-        };
-
-        // Render the chart
-        const statusChart = new Chart(
-            document.getElementById('statusChart'),
-            config
-        );
-
-        const predDistData = {{ prediction_dist_data|tojson }};
-        const ctxPred = document.getElementById('predictionDistChart').getContext('2d');
-        new Chart(ctxPred, {
-            type: 'pie',
-            data: {
-                labels: predDistData.labels,
-                datasets: [{
-                    data: predDistData.counts,
-                    backgroundColor: ['#1976d2', '#4CAF50'],
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: { legend: { position: 'bottom' } }
-            }
-        });
-    </script>
-</body>
-</html>

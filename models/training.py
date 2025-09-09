@@ -401,13 +401,16 @@ def trigger_retrain():
     """
     Trigger function that decides when to retrain using performance monitoring
     """
-    if should_retrain_smart(method='performance'):
+    try:
+    # if should_retrain_smart(method='performance'):
         train_model()
         update_retrain_tracking()
         return True
-    else:
+    except Exception as e:
+        print(f"Retraining error: {e}")
         return False
-
+    # else:
+    #     return False
 def update_retrain_tracking():
     """
     Update tracking information after retraining
@@ -435,239 +438,239 @@ def update_retrain_tracking():
     except Exception as e:
         pass
 
-def chi_square_retrain_test(p_threshold=None):
-    """
-    Use chi-square test to determine if new data distribution differs significantly 
-    from training data, indicating need for retraining
-    """
-    if p_threshold is None:
-        p_threshold, _ = config.get_drift_thresholds()
+# def chi_square_retrain_test(p_threshold=None):
+#     """
+#     Use chi-square test to determine if new data distribution differs significantly 
+#     from training data, indicating need for retraining
+#     """
+#     if p_threshold is None:
+#         p_threshold, _ = config.get_drift_thresholds()
         
-    try:
-        master_path = config.get_data_path()
-        if not os.path.exists(master_path):
-            return False
+#     try:
+#         master_path = config.get_data_path()
+#         if not os.path.exists(master_path):
+#             return False
         
-        df = pd.read_csv(master_path)
-        labeled_df = df.dropna(subset=['Depression'])
+#         df = pd.read_csv(master_path)
+#         labeled_df = df.dropna(subset=['Depression'])
         
-        # Get last retrain count to identify "new" vs "old" data
-        config_path = config.get_retrain_config_path()
-        last_count = 0
-        if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
-                last_count = int(f.read().strip())
+#         # Get last retrain count to identify "new" vs "old" data
+#         config_path = config.get_retrain_config_path()
+#         last_count = 0
+#         if os.path.exists(config_path):
+#             with open(config_path, 'r') as f:
+#                 last_count = int(f.read().strip())
         
-        if len(labeled_df) <= last_count + 10:  # Need minimum new data
-            return False
+#         if len(labeled_df) <= last_count + 10:  # Need minimum new data
+#             return False
             
-        # Split into old training data vs new data
-        old_data = labeled_df.iloc[:last_count]
-        new_data = labeled_df.iloc[last_count:]
+#         # Split into old training data vs new data
+#         old_data = labeled_df.iloc[:last_count]
+#         new_data = labeled_df.iloc[last_count:]
         
-        # Test on categorical features
-        categorical_cols = []
-        for col in df.columns:
-            if col not in ['Depression', 'id'] and df[col].dtype == 'object':
-                categorical_cols.append(col)
+#         # Test on categorical features
+#         categorical_cols = []
+#         for col in df.columns:
+#             if col not in ['Depression', 'id'] and df[col].dtype == 'object':
+#                 categorical_cols.append(col)
         
-        significant_changes = 0
-        total_tests = 0
+#         significant_changes = 0
+#         total_tests = 0
         
-        for col in categorical_cols:
-            if col in old_data.columns and col in new_data.columns:
-                # Create contingency table
-                old_counts = old_data[col].value_counts()
-                new_counts = new_data[col].value_counts()
+#         for col in categorical_cols:
+#             if col in old_data.columns and col in new_data.columns:
+#                 # Create contingency table
+#                 old_counts = old_data[col].value_counts()
+#                 new_counts = new_data[col].value_counts()
                 
-                # Align indices (same categories)
-                all_categories = set(old_counts.index) | set(new_counts.index)
-                old_aligned = [old_counts.get(cat, 0) for cat in all_categories]
-                new_aligned = [new_counts.get(cat, 0) for cat in all_categories]
+#                 # Align indices (same categories)
+#                 all_categories = set(old_counts.index) | set(new_counts.index)
+#                 old_aligned = [old_counts.get(cat, 0) for cat in all_categories]
+#                 new_aligned = [new_counts.get(cat, 0) for cat in all_categories]
                 
-                # Skip if too few samples
-                if sum(old_aligned) < 5 or sum(new_aligned) < 5:
-                    continue
+#                 # Skip if too few samples
+#                 if sum(old_aligned) < 5 or sum(new_aligned) < 5:
+#                     continue
                     
-                # Chi-square test
-                contingency_table = np.array([old_aligned, new_aligned])
-                if contingency_table.sum() > 0:
-                    chi2, p_value, dof, expected = chi2_contingency(contingency_table)
-                    total_tests += 1
+#                 # Chi-square test
+#                 contingency_table = np.array([old_aligned, new_aligned])
+#                 if contingency_table.sum() > 0:
+#                     chi2, p_value, dof, expected = chi2_contingency(contingency_table)
+#                     total_tests += 1
                     
-                    if p_value < p_threshold:
-                        significant_changes += 1
+#                     if p_value < p_threshold:
+#                         significant_changes += 1
         
-        # Retrain if significant portion of features show distribution shift
-        if total_tests > 0 and (significant_changes / total_tests) >= 0.3:
-            return True
+#         # Retrain if significant portion of features show distribution shift
+#         if total_tests > 0 and (significant_changes / total_tests) >= 0.3:
+#             return True
             
-        return False
+#         return False
         
-    except Exception as e:
-        # Fallback to count-based method
-        return should_retrain()
+#     except Exception as e:
+#         # Fallback to count-based method
+#         return should_retrain()
 
-def check_scipy_dependency():
-    """Check if scipy is available for chi-square test"""
-    try:
-        from scipy.stats import chi2_contingency
-        return True
-    except ImportError:
-        return False
+# def check_scipy_dependency():
+#     """Check if scipy is available for chi-square test"""
+#     try:
+#         from scipy.stats import chi2_contingency
+#         return True
+#     except ImportError:
+#         return False
 
-def should_retrain_smart(method='hybrid', count_threshold=None):
-    """
-    Smart retraining decision with multiple methods:
-    - 'distribution': Chi-square test on data distribution changes
-    - 'performance': Model performance degradation (accuracy/F1 drop)
-    - 'hybrid': Both distribution and performance checks
-    - 'count': Traditional count-based threshold
-    """
-    if count_threshold is None:
-        count_threshold = config.get_retrain_threshold()
+# def should_retrain_smart(method='hybrid', count_threshold=None):
+#     """
+#     Smart retraining decision with multiple methods:
+#     - 'distribution': Chi-square test on data distribution changes
+#     - 'performance': Model performance degradation (accuracy/F1 drop)
+#     - 'hybrid': Both distribution and performance checks
+#     - 'count': Traditional count-based threshold
+#     """
+#     if count_threshold is None:
+#         count_threshold = config.get_retrain_threshold()
         
-    if not check_scipy_dependency():
-        return should_retrain(count_threshold)
+#     if not check_scipy_dependency():
+#         return should_retrain(count_threshold)
     
-    if method == 'distribution':
-        return chi_square_retrain_test() or should_retrain(count_threshold)
-    elif method == 'performance':
-        return performance_based_retrain_test() or should_retrain(count_threshold)
-    elif method == 'hybrid':
-        return should_retrain_hybrid()
-    else:  # count method
-        return should_retrain(count_threshold)
+#     if method == 'distribution':
+#         return chi_square_retrain_test() or should_retrain(count_threshold)
+#     elif method == 'performance':
+#         return performance_based_retrain_test() or should_retrain(count_threshold)
+#     elif method == 'hybrid':
+#         return should_retrain_hybrid()
+#     else:  # count method
+#         return should_retrain(count_threshold)
 
-def performance_based_retrain_test(performance_threshold=None):
-    """
-    Use model performance degradation to determine if retraining is needed
-    Compare current predictions vs VERIFIED labels only (never model predictions)
-    """
-    if performance_threshold is None:
-        performance_threshold = config.get_performance_threshold()
+# def performance_based_retrain_test(performance_threshold=None):
+#     """
+#     Use model performance degradation to determine if retraining is needed
+#     Compare current predictions vs VERIFIED labels only (never model predictions)
+#     """
+#     if performance_threshold is None:
+#         performance_threshold = config.get_performance_threshold()
         
-    try:
-        master_path = config.get_data_path()
-        model_path = config.get_model_path()
-        if not os.path.exists(master_path) or not os.path.exists(model_path):
-            return False
+#     try:
+#         master_path = config.get_data_path()
+#         model_path = config.get_model_path()
+#         if not os.path.exists(master_path) or not os.path.exists(model_path):
+#             return False
         
-        df = pd.read_csv(master_path)
+#         df = pd.read_csv(master_path)
         
-        # CRITICAL: Only use rows with VERIFIED labels (never model predictions)
-        verified_df = df.dropna(subset=['Depression'])
+#         # CRITICAL: Only use rows with VERIFIED labels (never model predictions)
+#         verified_df = df.dropna(subset=['Depression'])
         
-        # Additional safety: exclude rows that were auto-labeled by our model
-        if 'Depression_Pred' in df.columns:
-            # Only use rows where Depression was NOT predicted (i.e., real ground truth)
-            verified_df = verified_df[verified_df['Depression_Pred'].isna() | 
-                                    (verified_df['Depression'] != verified_df['Depression_Pred'])]
+#         # Additional safety: exclude rows that were auto-labeled by our model
+#         if 'Depression_Pred' in df.columns:
+#             # Only use rows where Depression was NOT predicted (i.e., real ground truth)
+#             verified_df = verified_df[verified_df['Depression_Pred'].isna() | 
+#                                     (verified_df['Depression'] != verified_df['Depression_Pred'])]
         
-        # Get training metadata to know what was used for last training
-        try:
-            preprocessing_info = joblib.load(config.get_preprocessing_path())
-            training_metadata = preprocessing_info.get('training_metadata', {})
-            last_training_row_id = training_metadata.get('last_training_row_id', 0)
-        except:
-            # Fallback: use retrain config
-            config_path = config.get_retrain_config_path()
-            last_training_row_id = 0
-            if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
-                    last_training_row_id = int(f.read().strip())
+#         # Get training metadata to know what was used for last training
+#         try:
+#             preprocessing_info = joblib.load(config.get_preprocessing_path())
+#             training_metadata = preprocessing_info.get('training_metadata', {})
+#             last_training_row_id = training_metadata.get('last_training_row_id', 0)
+#         except:
+#             # Fallback: use retrain config
+#             config_path = config.get_retrain_config_path()
+#             last_training_row_id = 0
+#             if os.path.exists(config_path):
+#                 with open(config_path, 'r') as f:
+#                     last_training_row_id = int(f.read().strip())
         
-        if len(verified_df) <= last_training_row_id + 10:  # Need minimum new verified data
-            return False
+#         if len(verified_df) <= last_training_row_id + 10:  # Need minimum new verified data
+#             return False
         
-        # Get new VERIFIED data since last retrain
-        if 'id' in verified_df.columns:
-            new_verified_data = verified_df[verified_df['id'] > last_training_row_id]
-        else:
-            new_verified_data = verified_df.iloc[last_training_row_id:]
+#         # Get new VERIFIED data since last retrain
+#         if 'id' in verified_df.columns:
+#             new_verified_data = verified_df[verified_df['id'] > last_training_row_id]
+#         else:
+#             new_verified_data = verified_df.iloc[last_training_row_id:]
         
-        if len(new_verified_data) < 10:  # Need minimum samples for reliable test
-            return False
+#         if len(new_verified_data) < 10:  # Need minimum samples for reliable test
+#             return False
         
-        # Load current model
-        model = joblib.load(config.get_model_path())
+#         # Load current model
+#         model = joblib.load(config.get_model_path())
         
-        # Prepare features (minimal preprocessing for performance test)
-        # Note: This is a simplified version - in production you'd want full preprocessing
-        X_new = new_verified_data.drop(columns=['id', 'Depression'], errors='ignore')
+#         # Prepare features (minimal preprocessing for performance test)
+#         # Note: This is a simplified version - in production you'd want full preprocessing
+#         X_new = new_verified_data.drop(columns=['id', 'Depression'], errors='ignore')
         
-        # Handle categorical columns - convert to same format as training
-        for col in X_new.columns:
-            if X_new[col].dtype == 'object':
-                X_new[col] = X_new[col].astype('category')
+#         # Handle categorical columns - convert to same format as training
+#         for col in X_new.columns:
+#             if X_new[col].dtype == 'object':
+#                 X_new[col] = X_new[col].astype('category')
         
-        # Simple encoding for categorical columns (basic version)
-        X_new_encoded = pd.get_dummies(X_new, drop_first=True)
+#         # Simple encoding for categorical columns (basic version)
+#         X_new_encoded = pd.get_dummies(X_new, drop_first=True)
         
-        y_true = new_verified_data['Depression'].astype(int)
+#         y_true = new_verified_data['Depression'].astype(int)
         
-        # Make predictions
-        try:
-            y_pred = model.predict(X_new_encoded)
-        except Exception:
-            # If prediction fails due to feature mismatch, fallback to count-based
-            return False
+#         # Make predictions
+#         try:
+#             y_pred = model.predict(X_new_encoded)
+#         except Exception:
+#             # If prediction fails due to feature mismatch, fallback to count-based
+#             return False
         
-        # Calculate performance metrics
-        from sklearn.metrics import accuracy_score, f1_score
-        current_accuracy = accuracy_score(y_true, y_pred)
-        current_f1 = f1_score(y_true, y_pred)
+#         # Calculate performance metrics
+#         from sklearn.metrics import accuracy_score, f1_score
+#         current_accuracy = accuracy_score(y_true, y_pred)
+#         current_f1 = f1_score(y_true, y_pred)
         
-        # Get baseline performance from last training
-        baseline_accuracy, baseline_f1 = get_baseline_performance()
+#         # Get baseline performance from last training
+#         baseline_accuracy, baseline_f1 = get_baseline_performance()
         
-        # Check if performance dropped significantly
-        accuracy_drop = baseline_accuracy - current_accuracy
-        f1_drop = baseline_f1 - current_f1
+#         # Check if performance dropped significantly
+#         accuracy_drop = baseline_accuracy - current_accuracy
+#         f1_drop = baseline_f1 - current_f1
         
-        if accuracy_drop > performance_threshold or f1_drop > performance_threshold:
-            return True
+#         if accuracy_drop > performance_threshold or f1_drop > performance_threshold:
+#             return True
             
-        return False
+#         return False
         
-    except Exception as e:
-        return False
+#     except Exception as e:
+#         return False
 
-def get_baseline_performance():
-    """Get baseline performance metrics from last training"""
-    try:
-        metrics_path = config.get_metrics_path()
-        if os.path.exists(metrics_path):
-            with open(metrics_path, 'r') as f:
-                content = f.read()
-                # Extract accuracy and F1 from saved metrics
-                import re
-                accuracy_match = re.search(r'Accuracy: ([\d.]+)', content)
-                f1_match = re.search(r'F1 Score: ([\d.]+)', content)
+# def get_baseline_performance():
+#     """Get baseline performance metrics from last training"""
+#     try:
+#         metrics_path = config.get_metrics_path()
+#         if os.path.exists(metrics_path):
+#             with open(metrics_path, 'r') as f:
+#                 content = f.read()
+#                 # Extract accuracy and F1 from saved metrics
+#                 import re
+#                 accuracy_match = re.search(r'Accuracy: ([\d.]+)', content)
+#                 f1_match = re.search(r'F1 Score: ([\d.]+)', content)
                 
-                if accuracy_match and f1_match:
-                    return float(accuracy_match.group(1)), float(f1_match.group(1))
+#                 if accuracy_match and f1_match:
+#                     return float(accuracy_match.group(1)), float(f1_match.group(1))
         
-        # Default baseline if no metrics available
-        return 0.8, 0.8
-    except:
-        return 0.8, 0.8
+#         # Default baseline if no metrics available
+#         return 0.8, 0.8
+#     except:
+#         return 0.8, 0.8
 
-def should_retrain_hybrid(use_performance=True, use_distribution=True):
-    """
-    Hybrid approach: retrain based on both performance drop AND distribution changes
-    """
-    performance_trigger = False
-    distribution_trigger = False
+# def should_retrain_hybrid(use_performance=True, use_distribution=True):
+#     """
+#     Hybrid approach: retrain based on both performance drop AND distribution changes
+#     """
+#     performance_trigger = False
+#     distribution_trigger = False
     
-    if use_performance and check_scipy_dependency():
-        performance_trigger = performance_based_retrain_test()
+#     if use_performance and check_scipy_dependency():
+#         performance_trigger = performance_based_retrain_test()
     
-    if use_distribution and check_scipy_dependency():
-        distribution_trigger = chi_square_retrain_test()
+#     if use_distribution and check_scipy_dependency():
+#         distribution_trigger = chi_square_retrain_test()
     
-    # Retrain if either trigger fires
-    return performance_trigger or distribution_trigger or should_retrain(50)
+#     # Retrain if either trigger fires
+#     return performance_trigger or distribution_trigger or should_retrain(50)
 
 # def predict_depression(data_df):
 #     """
