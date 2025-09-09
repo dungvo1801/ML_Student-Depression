@@ -41,7 +41,7 @@ def create_example_table(cursor):
 def get_user_logs(cursor):
     print("Fetching user logs...")
     cursor.execute("""
-        SELECT * FROM user_log;
+        SELECT * FROM predictions;
     """)
     rows = cursor.fetchall()
     print(f"Retrieved {rows} .")
@@ -66,7 +66,7 @@ finally:
         print("\n🔒 Connection closed.")
 
 
-# import requests
+import requests
 
 # url = "https://81it9chkja.execute-api.ap-southeast-1.amazonaws.com/v1/login" 
 
@@ -80,6 +80,21 @@ finally:
 # }
 
 # response = requests.post(url, json=payload, headers=headers)
+
+# print(response.status_code)
+# print(response.text)
+
+
+# url = "https://81it9chkja.execute-api.ap-southeast-1.amazonaws.com/v1/download_template" 
+
+# payload = {
+# }
+
+# headers = {
+#     "Content-Type": "application/json"
+# }
+
+# response = requests.post(url, headers=headers)
 
 # print(response.status_code)
 # print(response.text)

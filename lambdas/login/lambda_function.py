@@ -40,6 +40,7 @@ def lambda_handler(event, context):
                     insert_log(cursor, username)
         except OperationalError as e:
             print("Error while connecting to PostgreSQL:", e)
+            return False
         finally:
             if 'connection' in locals() and connection:
                 connection.close()

@@ -669,89 +669,89 @@ def should_retrain_hybrid(use_performance=True, use_distribution=True):
     # Retrain if either trigger fires
     return performance_trigger or distribution_trigger or should_retrain(50)
 
-def predict_depression(data_df):
-    """
-    Make predictions on new data using the trained model.
+# def predict_depression(data_df):
+#     """
+#     Make predictions on new data using the trained model.
     
-    Args:
-        data_df: pandas DataFrame with features (excluding Depression column)
+#     Args:
+#         data_df: pandas DataFrame with features (excluding Depression column)
         
-    Returns:
-        predictions: list of 0/1 predictions
-        probabilities: list of probability scores
-    """
-    try:
-        # Load the model and preprocessing info
-        model = joblib.load(config.get_model_path())
-        preprocessing_info = joblib.load(config.get_preprocessing_path())
+#     Returns:
+#         predictions: list of 0/1 predictions
+#         probabilities: list of probability scores
+#     """
+#     try:
+#         # Load the model and preprocessing info
+#         model = joblib.load(config.get_model_path())
+#         preprocessing_info = joblib.load(config.get_preprocessing_path())
         
-        # Make a copy of input data
-        df = data_df.copy()
+#         # Make a copy of input data
+#         df = data_df.copy()
         
-        # Remove ID column if present
-        df = df.drop(columns=['id'], errors='ignore')
+#         # Remove ID column if present
+#         df = df.drop(columns=['id'], errors='ignore')
         
-        # Apply the same preprocessing as training
-        scaler = preprocessing_info['scaler']
-        categorical_cols = preprocessing_info['categorical_cols']
-        numeric_features = preprocessing_info['numeric_features']
+#         # Apply the same preprocessing as training
+#         scaler = preprocessing_info['scaler']
+#         categorical_cols = preprocessing_info['categorical_cols']
+#         numeric_features = preprocessing_info['numeric_features']
         
-        # Handle missing values and data types
-        for col in df.columns:
-            if col in categorical_cols:
-                df[col] = df[col].astype('category')
+#         # Handle missing values and data types
+#         for col in df.columns:
+#             if col in categorical_cols:
+#                 df[col] = df[col].astype('category')
         
-        # Extract numeric hours from Sleep Duration if present
-        if 'Sleep Duration' in df.columns:
-            def extract_hours(s):
-                match = re.search(r"(\d+(\.\d+)?)", str(s))
-                return float(match.group(1)) if match else np.nan
-            df['Sleep Duration'] = df['Sleep Duration'].apply(extract_hours)
+#         # Extract numeric hours from Sleep Duration if present
+#         if 'Sleep Duration' in df.columns:
+#             def extract_hours(s):
+#                 match = re.search(r"(\d+(\.\d+)?)", str(s))
+#                 return float(match.group(1)) if match else np.nan
+#             df['Sleep Duration'] = df['Sleep Duration'].apply(extract_hours)
         
-        # Convert Financial Stress to categorical if present
-        if 'Financial Stress' in df.columns:
-            df['Financial Stress'] = df['Financial Stress'].astype('category')
+#         # Convert Financial Stress to categorical if present
+#         if 'Financial Stress' in df.columns:
+#             df['Financial Stress'] = df['Financial Stress'].astype('category')
         
-        # Impute missing values for numerical columns
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        for col in numeric_cols:
-            if df[col].isnull().sum() > 0:
-                df[col] = df[col].fillna(df[col].median())
+#         # Impute missing values for numerical columns
+#         numeric_cols = df.select_dtypes(include=[np.number]).columns
+#         for col in numeric_cols:
+#             if df[col].isnull().sum() > 0:
+#                 df[col] = df[col].fillna(df[col].median())
         
-        # Get categorical features for encoding
-        cat_features = [col for col in categorical_cols if col in df.columns]
+#         # Get categorical features for encoding
+#         cat_features = [col for col in categorical_cols if col in df.columns]
         
-        # One-hot encode categorical features
-        df_encoded = pd.get_dummies(df, columns=cat_features, drop_first=True)
+#         # One-hot encode categorical features
+#         df_encoded = pd.get_dummies(df, columns=cat_features, drop_first=True)
         
-        # Standardize numerical features
-        if numeric_features:
-            # Only scale features that exist in both training and prediction data
-            features_to_scale = [col for col in numeric_features if col in df_encoded.columns]
-            if features_to_scale:
-                df_encoded[features_to_scale] = scaler.transform(df_encoded[features_to_scale])
+#         # Standardize numerical features
+#         if numeric_features:
+#             # Only scale features that exist in both training and prediction data
+#             features_to_scale = [col for col in numeric_features if col in df_encoded.columns]
+#             if features_to_scale:
+#                 df_encoded[features_to_scale] = scaler.transform(df_encoded[features_to_scale])
         
-        # Ensure all training features are present
-        training_features = preprocessing_info['feature_columns']
-        missing_features = [col for col in training_features if col not in df_encoded.columns]
+#         # Ensure all training features are present
+#         training_features = preprocessing_info['feature_columns']
+#         missing_features = [col for col in training_features if col not in df_encoded.columns]
         
-        # Add missing columns efficiently using pd.concat instead of loop
-        if missing_features:
-            missing_df = pd.DataFrame(0, index=df_encoded.index, columns=missing_features)
-            df_encoded = pd.concat([df_encoded, missing_df], axis=1)
+#         # Add missing columns efficiently using pd.concat instead of loop
+#         if missing_features:
+#             missing_df = pd.DataFrame(0, index=df_encoded.index, columns=missing_features)
+#             df_encoded = pd.concat([df_encoded, missing_df], axis=1)
         
-        # Select only training features in correct order
-        df_final = df_encoded[training_features]
+#         # Select only training features in correct order
+#         df_final = df_encoded[training_features]
         
-        # Make predictions
-        predictions = model.predict(df_final)
-        probabilities = model.predict_proba(df_final)[:, 1]  # Probability of class 1 (Depression)
+#         # Make predictions
+#         predictions = model.predict(df_final)
+#         probabilities = model.predict_proba(df_final)[:, 1]  # Probability of class 1 (Depression)
         
-        return predictions.tolist(), probabilities.tolist()
+#         return predictions.tolist(), probabilities.tolist()
         
-    except Exception as e:
-        print(f"Prediction error: {e}")
-        # Fallback to simple rule-based prediction
-        predictions = [0] * len(data_df)  # Default to no depression
-        probabilities = [0.5] * len(data_df)  # Neutral probability
-        return predictions, probabilities
+#     except Exception as e:
+#         print(f"Prediction error: {e}")
+#         # Fallback to simple rule-based prediction
+#         predictions = [0] * len(data_df)  # Default to no depression
+#         probabilities = [0.5] * len(data_df)  # Neutral probability
+#         return predictions, probabilities

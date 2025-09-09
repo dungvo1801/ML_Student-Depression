@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template, redirect, url_for, flash, send_from_directory, session
+from flask import Flask, jsonify, request, render_template, redirect, url_for, flash, send_from_directory, session, send_file
 import os
 import pandas as pd
 import joblib
@@ -6,6 +6,8 @@ from datetime import datetime
 import sqlite3
 import numpy as np
 from utils.login_api import login_api
+from utils.download_template_api import download_template_api
+import io
 
 # Import centralized configuration
 from utils.config import config
@@ -16,8 +18,6 @@ app.secret_key = 'secret_key_here'  # Add a secret key for session management an
 # Use config for upload folder
 app.config['UPLOAD_FOLDER'] = config.config["paths"]["uploads_dir"]
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-
 
 #  # BE
 # def init_db():
@@ -235,14 +235,6 @@ def predict():
     for idx, row in df_with_predictions.iterrows():
         result_rows.append(row.to_dict())
     
-    # Debug: Print column order and sample data
-    print(f"Final columns order: {list(df_with_predictions.columns)}")
-    print(f"Number of result rows: {len(result_rows)}")
-    if result_rows:
-        print(f"Sample result row keys: {list(result_rows[0].keys())}")
-        print(f"Sample Depression Status: {result_rows[0].get('Depression_Status', 'NOT FOUND')}")
-        print(f"Sample Confidence Score: {result_rows[0].get('Confidence_Score', 'NOT FOUND')}")
-    
     # Count predictions for chart
     pred_counts = {'Depressed': 0, 'Not Depressed': 0}
     for pred in predictions:
@@ -296,74 +288,28 @@ def predict():
                          columns=list(df_with_predictions.columns),
                          depressed_count=pred_counts.get('Depressed', 0),
                          not_depressed_count=pred_counts.get('Not Depressed', 0))
-#Check again
-@app.route('/api/predict', methods=['POST'])
-def api_predict():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    
-    try:
-        # Save uploaded file temporarily
-        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-        file.save(temp_path)
-        
-        # Load and validate data
-        df = pd.read_csv(temp_path)
-        
-        # APPLY COMPREHENSIVE DATA VALIDATION
-        try:
-            from models.training import validate_and_clean_data
-            df_cleaned = validate_and_clean_data(df)
-        except Exception as validation_error:
-            # If validation fails, use original data
-            df_cleaned = df
-        
-        # Load model
-        model = joblib.load(config.get_model_path())
-        
-        # Prepare features (drop non-feature columns)
-        feature_cols = [col for col in df_cleaned.columns if col not in ['id', 'Depression']]
-        X_pred = df_cleaned[feature_cols]
-        
-        # Predict using the pipeline (handles preprocessing automatically)
-        preds = model.predict(X_pred)
-        pred_proba = model.predict_proba(X_pred)[:, 1]  # Probability of depression
-        
-        # Prepare results
-        results = []
-        for i in range(len(df)):
-            result = {
-                'row_index': i,
-                'prediction': int(preds[i]),
-                'probability': float(pred_proba[i]),
-                'risk_level': 'High' if pred_proba[i] > 0.7 else 'Medium' if pred_proba[i] > 0.3 else 'Low'
-            }
-            results.append(result)
-        
-        # Clean up temp file
-        os.remove(temp_path)
-        
-        return jsonify({
-            'success': True,
-            'predictions': results,
-            'total_rows': len(df),
-            'validation_applied': True
-        })
-        
-    except Exception as e:
-        # Clean up temp file if it exists
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        return jsonify({'error': f'Prediction failed: {str(e)}'}), 500
 
 #BE
 @app.route('/student_depression_template.csv')
 def download_template():
-    return send_from_directory(directory='.', path='student_depression_template.csv', as_attachment=True)
+    response = download_template_api()
 
+    if response.status_code != 200:
+        return "Failed to fetch CSV from Lambda", 500
+
+    file_bytes = response.content 
+
+    # Wrap bytes in a file-like object
+    file_obj = io.BytesIO(file_bytes)
+
+    # Send file as attachment
+    return send_file(
+        file_obj,
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name='student_depression_template.csv'
+    )
+    
 #FE + BE
 @app.route('/dashboard')
 def dashboard():
@@ -533,32 +479,32 @@ def logout():
     session.clear()
     return redirect(url_for('hello_world'))
 
-#BE
-@app.route('/api/predictions', methods=['GET'])
-def get_predictions():
-    """Get prediction history from database"""
-    try:
-        conn = sqlite3.connect('predictions.db')
-        c = conn.cursor()
-        c.execute('SELECT * FROM predictions ORDER BY timestamp DESC LIMIT 100')
-        rows = c.fetchall()
-        conn.close()
+# #BE
+# @app.route('/api/predictions', methods=['GET'])
+# def get_predictions():
+#     """Get prediction history from database"""
+#     try:
+#         conn = sqlite3.connect('predictions.db')
+#         c = conn.cursor()
+#         c.execute('SELECT * FROM predictions ORDER BY timestamp DESC LIMIT 100')
+#         rows = c.fetchall()
+#         conn.close()
         
-        # Convert to list of dicts for JSON
-        results = [
-            {
-                'id': row[0], 
-                'user': row[1], 
-                'filename': row[2], 
-                'input_data': row[3], 
-                'prediction': row[4], 
-                'timestamp': row[5]
-            }
-            for row in rows
-        ]
-        return jsonify(results)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+#         # Convert to list of dicts for JSON
+#         results = [
+#             {
+#                 'id': row[0], 
+#                 'user': row[1], 
+#                 'filename': row[2], 
+#                 'input_data': row[3], 
+#                 'prediction': row[4], 
+#                 'timestamp': row[5]
+#             }
+#             for row in rows
+#         ]
+#         return jsonify(results)
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
 
 #FE
 @app.route('/download_results/<filename>')
