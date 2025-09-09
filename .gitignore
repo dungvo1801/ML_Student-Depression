@@ -27,7 +27,7 @@ MANIFEST
 venv/
 ENV/
 env/
-.env
+# .env
 
 # PyCharm
 .idea/
