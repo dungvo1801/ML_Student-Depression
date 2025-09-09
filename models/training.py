@@ -17,7 +17,7 @@ from datetime import datetime
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import config
+from utils.config import config
 
 def validate_and_clean_data(df):
     """
@@ -185,10 +185,6 @@ def train_model(imbalance_method='auto'):
         if col in data.columns:
             data[col] = data[col].astype('category')
 
-    # Check unique values in some columns to decide cleaning strategy
-    # print("Unique values in 'Sleep Duration':", data['Sleep Duration'].unique())
-    # print("Unique values in 'Financial Stress':", data['Financial Stress'].unique())
-
     # Define a function to extract numeric hours from Sleep Duration column
     def extract_hours(s):
         # Find a number (including decimals)
@@ -200,12 +196,9 @@ def train_model(imbalance_method='auto'):
     # Convert Financial Stress to categorical if it represents levels (e.g., Low, Medium, High)
     data['Financial Stress'] = data['Financial Stress'].astype('category')
 
-    # Verify changes
-    # data[['Sleep Duration', 'Financial Stress']].head()
 
      #Display missing values per column
     missing_values = data.isnull().sum()
-    # print("Missing values:\n", missing_values)
     
     # Dynamically impute missing values for numerical columns with median
     numeric_cols = data.select_dtypes(include=[np.number]).columns
@@ -213,7 +206,7 @@ def train_model(imbalance_method='auto'):
         if col not in ['Depression', 'id'] and data[col].isnull().sum() > 0:
             data[col] = data[col].fillna(data[col].median())
 
-    #Feature Engineering
+    # Feature Engineering
     # Dynamically identify categorical columns for encoding
     # Get all categorical columns except target variable
     cat_features = [col for col in categorical_cols if col in data.columns and col != 'Depression']
