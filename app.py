@@ -5,17 +5,13 @@ import joblib
 from datetime import datetime
 import sqlite3
 import numpy as np
+from utils.login_api import login_api
+
 # Import centralized configuration
-from config import config
+from utils.config import config
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key_here'  # Add a secret key for session management and flash messages
-
-# Simple user database
-users = {
-    'admin': 'password',
-    'user': 'userpass'
-}
+app.secret_key = 'secret_key_here'  # Add a secret key for session management and flash messages
 
 # Use config for upload folder
 app.config['UPLOAD_FOLDER'] = config.config["paths"]["uploads_dir"]
@@ -23,25 +19,25 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 
 
- # BE
-def init_db():
-    conn = sqlite3.connect('predictions.db')
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS predictions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user TEXT,
-            filename TEXT,
-            input_data TEXT,
-            prediction TEXT,
-            timestamp TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+#  # BE
+# def init_db():
+#     conn = sqlite3.connect('predictions.db')
+#     c = conn.cursor()
+#     c.execute('''
+#         CREATE TABLE IF NOT EXISTS predictions (
+#             id INTEGER PRIMARY KEY AUTOINCREMENT,
+#             user TEXT,
+#             filename TEXT,
+#             input_data TEXT,
+#             prediction TEXT,
+#             timestamp TEXT
+#         )
+#     ''')
+#     conn.commit()
+#     conn.close()
 
-# Call this at app startup
-init_db()
+# # Call this at app startup
+# init_db()
 
 #FE
 @app.route('/', methods=['GET'])
@@ -53,19 +49,9 @@ def hello_world():
 def login():
     username = request.form.get('username')
     password = request.form.get('password')
+    authentication = login_api(username=username, password=password)
     # Check if user exists and password matches
-    if username in users and users[username] == password:
-        session['username'] = username
-        # Log login activity
-        login_log_path = config.get_login_history_path()
-        import csv
-        from datetime import datetime
-        log_exists = os.path.exists(login_log_path)
-        with open(login_log_path, 'a', newline='') as logfile:
-            writer = csv.writer(logfile)
-            if not log_exists:
-                writer.writerow(['user', 'time'])
-            writer.writerow([username, datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+    if authentication:
         return redirect(url_for('upload_file'))
     else:
         # Flash error message and redirect back to login page
