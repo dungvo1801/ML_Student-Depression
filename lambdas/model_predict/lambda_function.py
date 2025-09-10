@@ -3,19 +3,24 @@ import pandas as pd
 from util import (
     predict_depression, 
     insert_prediction,
+    download_bytes,
     config
 )
 import psycopg2
 from psycopg2 import OperationalError
+import io
 
 def lambda_handler(event, context):
     body = json.loads(event['body']) 
-    df = body.get('df')
-    df = pd.DataFrame(df)
+    filename = f"tmp/{body.get('filename')}"
+
+    csv_bytes = download_bytes(s3_key=filename)
+    csv_bytes = io.BytesIO(csv_bytes)
+    df = pd.read_csv(csv_bytes)
 
     # Use the proper prediction function from training module
     try:
-        predictions, prediction_probabilities = predict_depression(df)
+        predictions, probabilities = predict_depression(df)
         print(f"Generated {len(predictions)} predictions using trained model")
         
     except Exception as e:
@@ -24,7 +29,7 @@ def lambda_handler(event, context):
         df_features = df.drop(columns=['id'], errors='ignore')
         predictions = [1 if len([col for col in df_features.columns if 'stress' in col.lower() or 'anxiety' in col.lower()]) > 2 else 0 
                       for idx, row in df_features.iterrows()]
-        prediction_probabilities = [0.7 if pred == 1 else 0.3 for pred in predictions]
+        # prediction_probabilities = [0.7 if pred == 1 else 0.3 for pred in predictions]
         print(f"Using fallback rule-based predictions")
     
     # CREATE COMPLETE RESULTS WITH ALL COLUMNS + PREDICTIONS AT THE END
@@ -51,7 +56,7 @@ def lambda_handler(event, context):
 
         with connection:
             with connection.cursor() as cursor:
-                insert_prediction(cursor, df_with_predictions.to_json(orient='records'))
+                insert_prediction(cursor, df_with_predictions)
     except OperationalError as e:
         print("Error while connecting to PostgreSQL:", e)
     finally:

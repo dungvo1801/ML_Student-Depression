@@ -1,15 +1,14 @@
 import requests
 from dotenv import load_dotenv
 import os
-from typing import Dict
 
 load_dotenv()
 
-def predict_api(df: Dict) -> requests.Response:
+def predict_api(filename: str) -> requests.Response:
     url = f"{os.getenv('LAMBDA_ENDPOINT')}/predict"
 
     payload = {
-        "df": df
+        "filename": filename
     }
 
     headers = {

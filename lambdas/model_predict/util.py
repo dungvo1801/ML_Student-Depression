@@ -5,7 +5,8 @@ import numpy as np
 import re
 import boto3
 import io
-import pickle  
+# import pickle  
+import joblib
 
 # Load environment variables from .env file
 load_dotenv()
@@ -44,106 +45,103 @@ config = {
 }
 
 
+# def insert_prediction(cursor, df):
+#     print(f"Inserting new prediction record: {df}")
+#     cursor.execute("""
+#         INSERT INTO predictions (user, filename, input_data, prediction, timestamp) VALUES (%s,%s,%s,%s,%s);
+#     """, (df,))
+#     print("Record inserted.")
 def insert_prediction(cursor, df):
-    print(f"Inserting new prediction record: {df}")
-    cursor.execute("""
-        INSERT INTO predictions (user, filename, input_data, prediction, timestamp) VALUES (%s,%s,%s,%s,%s);
-    """, (df,))
-    print("Record inserted.")
+    print(f"Inserting {len(df)} prediction record(s)...")
+
+    # Define column order (excluding 'id' and 'timestamp')
+    columns = [
+        "Gender", "Age", "City", "Profession", "Academic Pressure",
+        "Work Pressure", "CGPA", "Study Satisfaction", "Job Satisfaction",
+        "Sleep Duration", "Dietary Habits", "Degree",
+        "Have you ever had suicidal thoughts ?", "Work/Study Hours",
+        "Financial Stress", "Family History of Mental Illness", "Depression"
+    ]
+
+    # Quote columns with spaces or special characters
     
+    quoted_columns = [f'"{col}"' for col in columns]
+    quoted_columns.append('"Validation"')
 
+    # Build SQL placeholders for each row
+    placeholders = ', '.join(['%s'] * len(quoted_columns))
 
-def predict_depression(data_df):
+    # Convert DataFrame to list of tuples, appending `None` for "Validation"
+    values = []
+    for _, row in df.iterrows():
+        row_values = [row.get(col) for col in columns] + [None]
+        values.append(tuple(row_values))
+
+    # Build the SQL query
+    sql = f"""
+        INSERT INTO predictions ({', '.join(quoted_columns)})
+        VALUES ({placeholders});
     """
-    Make predictions on new data using the trained model.
+
+    # Execute many rows at once
+    cursor.executemany(sql, values)
+    print(f"Inserted {len(values)} record(s) with Validation = None.")
+
+
+def predict_depression(X_new, use_ensemble=True):
+    """
+    Make predictions using ensemble method or best individual model.
     
     Args:
-        data_df: pandas DataFrame with features (excluding Depression column)
-        
+        X_new: New data to predict
+        use_ensemble: If True, uses weighted ensemble; if False, uses best individual model
+    
     Returns:
-        predictions: list of 0/1 predictions
-        probabilities: list of probability scores
+        predictions, probabilities, method_used
     """
     try:
 
-        # Download model and preprocessing info from S3
+        # # Download model and preprocessing info from S3
+        # model_bytes = download_bytes(os.getenv('RF_MODEL_KEY'))
+        # preprocessing_bytes = download_bytes(os.getenv('PREPROCESSING_MODEL_KEY'))
+
+        # if model_bytes is None or preprocessing_bytes is None:
+        #     raise Exception("Failed to download model or preprocessing files from S3")
+
+        # # Deserialize the downloaded bytes into Python objects
+        # model = pickle.loads(model_bytes)
+        # preprocessing_info = pickle.loads(preprocessing_bytes)
+        
         model_bytes = download_bytes(os.getenv('RF_MODEL_KEY'))
-        preprocessing_bytes = download_bytes(os.getenv('PREPROCESSING_MODEL_KEY'))
+        log_model_bytes =  download_bytes(os.getenv('LOG_MODEL_KEY'))
+        ensemble_model_bytes =  download_bytes(os.getenv('ENSEMBLE_KEY'))
+        
+        rf_model = joblib.load(io.BytesIO(model_bytes))
+        log_model = joblib.load(io.BytesIO(log_model_bytes))
+        ensemble_info = joblib.load(io.BytesIO(ensemble_model_bytes))
 
-        if model_bytes is None or preprocessing_bytes is None:
-            raise Exception("Failed to download model or preprocessing files from S3")
-
-        # Deserialize the downloaded bytes into Python objects
-        model = pickle.loads(model_bytes)
-        preprocessing_info = pickle.loads(preprocessing_bytes)
-
-        # Make a copy of input data
-        df = data_df.copy()
-        
-        # Remove ID column if present
-        df = df.drop(columns=['id'], errors='ignore')
-        
-        # Apply the same preprocessing as training
-        scaler = preprocessing_info['scaler']
-        categorical_cols = preprocessing_info['categorical_cols']
-        numeric_features = preprocessing_info['numeric_features']
-        
-        # Handle missing values and data types
-        for col in df.columns:
-            if col in categorical_cols:
-                df[col] = df[col].astype('category')
-        
-        # Extract numeric hours from Sleep Duration if present
-        if 'Sleep Duration' in df.columns:
-            def extract_hours(s):
-                match = re.search(r"(\d+(\.\d+)?)", str(s))
-                return float(match.group(1)) if match else np.nan
-            df['Sleep Duration'] = df['Sleep Duration'].apply(extract_hours)
-        
-        # Convert Financial Stress to categorical if present
-        if 'Financial Stress' in df.columns:
-            df['Financial Stress'] = df['Financial Stress'].astype('category')
-        
-        # Impute missing values for numerical columns
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        for col in numeric_cols:
-            if df[col].isnull().sum() > 0:
-                df[col] = df[col].fillna(df[col].median())
-        
-        # Get categorical features for encoding
-        cat_features = [col for col in categorical_cols if col in df.columns]
-        
-        # One-hot encode categorical features
-        df_encoded = pd.get_dummies(df, columns=cat_features, drop_first=True)
-        
-        # Standardize numerical features
-        if numeric_features:
-            # Only scale features that exist in both training and prediction data
-            features_to_scale = [col for col in numeric_features if col in df_encoded.columns]
-            if features_to_scale:
-                df_encoded[features_to_scale] = scaler.transform(df_encoded[features_to_scale])
-        
-        # Ensure all training features are present
-        training_features = preprocessing_info['feature_columns']
-        missing_features = [col for col in training_features if col not in df_encoded.columns]
-        
-        # Add missing columns efficiently using pd.concat instead of loop
-        if missing_features:
-            missing_df = pd.DataFrame(0, index=df_encoded.index, columns=missing_features)
-            df_encoded = pd.concat([df_encoded, missing_df], axis=1)
-        
-        # Select only training features in correct order
-        df_final = df_encoded[training_features]
-        
-        # Make predictions
-        predictions = model.predict(df_final)
-        probabilities = model.predict_proba(df_final)[:, 1]  # Probability of class 1 (Depression)
-        
-        return predictions.tolist(), probabilities.tolist()
-        
+        if use_ensemble:
+            # Get predictions from both models
+            rf_proba = rf_model.predict_proba(X_new)[:, 1]
+            log_proba = log_model.predict_proba(X_new)[:, 1]
+            
+            # Weighted ensemble
+            ensemble_proba = (ensemble_info['rf_weight'] * rf_proba + 
+                            ensemble_info['log_weight'] * log_proba)
+            ensemble_pred = (ensemble_proba >= ensemble_info['ensemble_threshold']).astype(int)
+            
+            return ensemble_pred, ensemble_proba, "Weighted Ensemble"
+        else:
+            # Use best individual model
+            if ensemble_info['best_model'] == 'Random Forest':
+                pred = rf_model.predict(X_new)
+                proba = rf_model.predict_proba(X_new)[:, 1]
+                return pred, proba, "Random Forest"
+            else:
+                pred = log_model.predict(X_new)
+                proba = log_model.predict_proba(X_new)[:, 1]
+                return pred, proba, "Logistic Regression"
+                
     except Exception as e:
-        print(f"Prediction error: {e}")
-        # Fallback to simple rule-based prediction
-        predictions = [0] * len(data_df)  # Default to no depression
-        probabilities = [0.5] * len(data_df)  # Neutral probability
-        return predictions, probabilities
+        print(f"Error in ensemble prediction: {e}")
+        return None, None, "Error"

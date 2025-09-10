@@ -10,6 +10,7 @@ from utils.download_template_api import download_template_api
 from utils.predict_api import predict_api
 from utils.upload_api import upload_api
 import io
+import json
 
 # Import centralized configuration
 from utils.config import config
@@ -43,7 +44,6 @@ def login():
 # BE + FE
 @app.route('/upload', methods=['GET', 'POST']) 
 def upload_file():
-    from datetime import datetime
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     if request.method == 'POST':
         if 'file' not in request.files:
@@ -56,9 +56,11 @@ def upload_file():
         if file:
             file_bytes = file.read()
             response = upload_api(file_bytes=file_bytes, user=session.get('username'), filename=file.filename)
-
+            print(response.text)
             if response.status_code == 200:
-                return redirect(url_for('predict', filename=file.filename, file=file.read()))
+                response_json = response.json()
+                tmp_file = response_json['tmp_file']
+                return redirect(url_for('predict', filename=tmp_file))
             else: 
                 return redirect(request.url)
          
@@ -67,32 +69,31 @@ def upload_file():
 @app.route('/predict')
 def predict():
     filename = request.args.get('filename')
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    df = pd.read_csv(filepath)
     
     # Use the proper prediction function from training module
     try:
-        response = predict_api(df)
-
+        response = predict_api(filename)
+        
         if response.status_code != 200:
             flash(f"Failed to fetch CSV from Lambda: Status = {response.status_code}")
-            return None
-
-        content = response.content
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        return render_template('result.html', 
-                    results=content["results"], 
-                    current_time=current_time, 
-                    prediction_dist_data=content["prediction_dist_data"],
-                    download_filename=filename,
-                    columns=content["columns"],
-                    depressed_count=content["depressed_count"],
-                    not_depressed_count=content["not_depressed_count"])
+            return redirect(url_for('upload_file'))
+        else:
+            print("done")
+            content = response.json()
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            return render_template('result.html', 
+                        results=content["results"], 
+                        current_time=current_time, 
+                        prediction_dist_data=content["prediction_dist_data"],
+                        download_filename=filename,
+                        columns=content["columns"],
+                        depressed_count=content["depressed_count"],
+                        not_depressed_count=content["not_depressed_count"])
 
             
     except Exception as e:
         flash(f"Prediction failed: {e}")
-        return None
+        return redirect(url_for('upload_file'))
 
 @app.route('/retrain_model', methods=['POST'])
 def retrain_model():
@@ -140,7 +141,6 @@ def download_template():
         download_name='student_depression_template.csv'
     )
     
-#FE + BE
 @app.route('/dashboard')
 def dashboard():
     # Only allow admin
@@ -156,24 +156,10 @@ def dashboard():
     # Stats
     master_path = config.get_data_path()
     total_records = 0
-    doctor_uploads = 0
-    if os.path.exists(master_path):
-        import pandas as pd
-        df = pd.read_csv(master_path)
-        total_records = df.shape[0]
-        # Convert id to numeric for comparison
-        if 'id' in df.columns:
-            df['id'] = pd.to_numeric(df['id'], errors='coerce')
-            doctor_uploads = df[df['id'] > 10000].shape[0]
-
-    # Last retrain time
     model_path = config.get_model_path()
     last_retrain = 'N/A'
     if os.path.exists(model_path):
-        import datetime
-        last_retrain = datetime.datetime.fromtimestamp(os.path.getmtime(model_path)).strftime('%Y-%m-%d %H:%M:%S')
-    
-    # upload log
+        last_retrain = datetime.fromtimestamp(os.path.getmtime(model_path)).strftime('%Y-%m-%d %H:%M:%S')
     # Read upload history
     upload_history = []
     upload_log_path = config.get_upload_history_path()
@@ -184,7 +170,6 @@ def dashboard():
             upload_history = list(reader)[-100:]
     # Prepare upload trends data for chart
     from collections import Counter
-    from datetime import datetime
     date_counts = Counter()
     for entry in upload_history:
         try:
@@ -202,17 +187,17 @@ def dashboard():
     imbalance_method = "Class Weights (Auto)"
     class_distribution = "Not Available"
     imbalance_ratio = "Not Available"
-    
+   
     metrics_path = config.get_metrics_path()
     if os.path.exists(metrics_path):
         with open(metrics_path) as f:
             model_metrics = f.read()
-            
+           
         # Extract imbalance handling information
         if '=== Class Imbalance Handling ===' in model_metrics:
             imbalance_section = model_metrics.split('=== Class Imbalance Handling ===')[1]
             lines = imbalance_section.split('\n')
-            
+           
             for line in lines:
                 if 'Method used:' in line:
                     method = line.split('Method used:')[1].strip()
@@ -234,14 +219,14 @@ def dashboard():
         'accuracy': [],
         'f1_score': []
     }
-    
+   
     # Extract performance metrics from model metrics file
     if model_metrics:
         try:
             lines = model_metrics.split('\n')
             training_events = []
             current_event = {}
-            
+           
             for line in lines:
                 if 'Training completed at:' in line:
                     if current_event:
@@ -259,10 +244,10 @@ def dashboard():
                         current_event['f1_score'] = f1
                     except:
                         pass
-            
+           
             if current_event:
                 training_events.append(current_event)
-            
+           
             # Prepare chart data from training events
             for i, event in enumerate(training_events[-10:]):  # Show last 10 training events
                 if 'accuracy' in event and 'f1_score' in event:
@@ -291,17 +276,16 @@ def dashboard():
             login_history = list(reader)[-20:]  # Show last 20 logins
     # Status message from query param
     status_message = request.args.get('status_message')
-    return render_template('dashboard.html', 
-                         logs=logs, 
-                         total_records=total_records, 
-                         total_uploads=doctor_uploads, 
-                         last_retrain=last_retrain, 
-                         upload_history=upload_history, 
-                         model_metrics=model_metrics, 
-                         upload_trends_data=upload_trends_data, 
-                         performance_history_data=performance_history_data, 
-                         last_result_url=last_result_url, 
-                         login_history=login_history, 
+    return render_template('dashboard.html',
+                         logs=logs,
+                         total_records=total_records,
+                         last_retrain=last_retrain,
+                         upload_history=upload_history,
+                         model_metrics=model_metrics,
+                         upload_trends_data=upload_trends_data,
+                         performance_history_data=performance_history_data,
+                         last_result_url=last_result_url,
+                         login_history=login_history,
                          status_message=status_message,
                          imbalance_method=imbalance_method,
                          class_distribution=class_distribution,
