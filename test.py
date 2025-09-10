@@ -36,14 +36,40 @@
 #     """)
 #     print("✅ Table 'students' is ready.")
 
+# def insert_prediction(cursor, df):
+#     print(f"Inserting new prediction record: {df}")
+#     cursor.execute("""
+#         INSERT INTO predictions ("Gender", "Age", "City", "Profession", "Academic Pressure","Work Pressure", "CGPA", "Study Satisfaction", "Job Satisfaction","Sleep Duration", "Dietary Habits", "Degree","Have you ever had suicidal thoughts ?", "Work/Study Hours","Financial Stress", "Family History of Mental Illness", "Depression") VALUES ("M",12);
+#     """)
+#     print("Record inserted.")
+    
+
 # def get_user_logs(cursor):
 #     print("Fetching user logs...")
 #     cursor.execute("""
-#         SELECT * FROM upload_log;
+#         SELECT * FROM predictions;
 #     """)
 #     rows = cursor.fetchall()
 #     print(f"Retrieved {rows} .")
 #     return rows
+
+# def get_prediction_logs(cursor):
+#     print("Fetching user logs...")
+    
+#     cursor.execute("SELECT * FROM student_depression_master;")
+    
+#     # Get column names from cursor description
+#     column_names = [desc[0] for desc in cursor.description]
+#     print("Columns:", column_names)
+
+#     # Fetch all rows
+#     rows = cursor.fetchall()
+#     print(f"Retrieved {len(rows)} rows.")
+    
+#     # Optionally, return rows as list of dicts
+#     logs = [dict(zip(column_names, row)) for row in rows]
+    
+#     return logs
 
 
 # try:
@@ -53,7 +79,9 @@
 #     with connection:
 #         with connection.cursor() as cursor:
 #             # show_tables(cursor)
-#             get_user_logs(cursor)
+#             # insert_prediction(cursor, "")
+#             print(get_prediction_logs(cursor))
+#             # get_user_logs(cursor)
 
 # except OperationalError as e:
 #     print("❌ Error while connecting to PostgreSQL:", e)
@@ -67,7 +95,7 @@
 import requests
 import base64
 
-url = "https://81it9chkja.execute-api.ap-southeast-1.amazonaws.com/v1/upload" 
+url = "https://81it9chkja.execute-api.ap-southeast-1.amazonaws.com/v1/predict" 
 
 filename = "C:/Users/Admin/Desktop/AI/ML_Student-Depression/models/student_depression_dataset.csv"
 
@@ -80,9 +108,7 @@ file_b64 = base64.b64encode(file_bytes).decode('utf-8')
 
 
 payload = {
-    "file_bytes": file_b64,
-    "user": "admin",
-    "filename": "student_depression_test.csv"
+    "filename": "tmp20250910150412.csv"
 }
 
 headers = {
@@ -110,10 +136,10 @@ print(response.text)
 # print(response.text)
 
 # from datetime import datetime
-# from lambdas.upload.util import upload_bytes
+# from lambdas.model_predict.util import download_bytes
 # import base64
-
-
+# import io
+# import pandas as pd
 # filename = "C:/Users/Admin/Desktop/AI/ML_Student-Depression/models/student_depression_dataset.csv"
 
 # # Open and read file bytes
@@ -124,5 +150,18 @@ print(response.text)
 # file_b64 = base64.b64encode(file_bytes).decode('utf-8')
 
 
-# tmp_file = f"tmp{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
-# upload_bytes(s3_key=tmp_file, file_bytes=file_bytes)
+# csv_bytes = download_bytes(s3_key='tmp20250909205309.csv')
+# print(csv_bytes)
+# csv_bytes = io.BytesIO(csv_bytes)
+# df = pd.read_csv(csv_bytes)
+# print(df)
+
+
+# from lambdas.model_predict.lambda_function import lambda_handler
+
+# lambda_handler(event="", context="")
+
+
+
+
+

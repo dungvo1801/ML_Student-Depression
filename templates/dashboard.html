@@ -1,552 +1,527 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Student Clinic - Admin Dashboard</title>
     <style>
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: linear-gradient(135deg, #eaf6fb 0%, #f5e6fa 100%);
-            margin: 0;
-        }
-        
-        .navbar { 
-            background: linear-gradient(90deg, #1976d2 60%, #8e24aa 100%); 
-            color: white; 
-            padding: 25px 0; 
-            text-align: center; 
-            font-size: 2.2em; 
-            letter-spacing: 3px; 
-            box-shadow: 0 4px 12px #b3c6e7; 
-        }
-        .nav-links { 
-            text-align: center; 
-            margin: 20px 0; 
-            padding: 15px;
-        }
-        .nav-link { 
-            display: inline-block; 
-            margin: 0 15px; 
-            color: #1976d2; 
-            background: #fff; 
-            border-radius: 8px; 
-            padding: 12px 24px; 
-            text-decoration: none; 
-            font-weight: 600; 
-            border: 2px solid #1976d2; 
-            transition: all 0.3s; 
-            font-size: 1.1em;
-        }
-        .nav-link:hover { 
-            background: #1976d2; 
-            color: #fff; 
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-        
-        .container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 90vh;
-        }
-        
-        .dashboard-box {
-            background: white;
-            padding: 36px 32px 28px 32px;
-            border-radius: 16px;
-            box-shadow: 0px 0px 18px #b3c6e7;
-            width: 100%;
-            max-width: 900px;
-            margin-top: 40px;
-            margin-bottom: 40px;
-        }
-        
-        h2 {
-            text-align: center;
-            margin-bottom: 18px;
-            color: #8e24aa;
-            letter-spacing: 1px;
-        }
-        
-        .section-title {
-            color: #1976d2;
-            font-size: 1.15em;
-            margin-top: 28px;
-            margin-bottom: 10px;
-            font-weight: 700;
-            letter-spacing: 1px;
-        }
-        
-        ul {
-            background: #f5f5f5;
-            border-radius: 6px;
-            padding: 18px;
-            list-style: none;
-        }
-        
-        li {
-            margin-bottom: 8px;
-            font-size: 1em;
-            color: #333;
-        }
-        
-        .footer {
-            text-align: center;
-            color: #888;
-            font-size: 0.95em;
-            margin-top: 30px;
-        }
-        
-        .back-link {
-            display: block;
-            text-align: center;
-            margin: 18px 0 0 0;
-            color: #8e24aa;
-            text-decoration: underline;
-            font-size: 1.05em;
-            font-weight: 500;
-        }
-        
-        .back-link:hover {
-            color: #1976d2;
-        }
-        
-        .stat-box {
-            background: linear-gradient(90deg, #e3f2fd 60%, #f3e5f5 100%);
-            border-radius: 8px;
-            padding: 14px 22px;
-            margin-bottom: 16px;
-            font-size: 1.08em;
-            color: #1976d2;
-            box-shadow: 0 1px 6px #b3c6e7;
-        }
-        
-        .history-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-            margin-bottom: 18px;
-        }
-        
-        .history-table th,
-        .history-table td {
-            border: 1px solid #b3c6e7;
-            padding: 10px 12px;
-            text-align: left;
-            font-size: 1em;
-        }
-        
-        .history-table th {
-            background: linear-gradient(90deg, #e3f2fd 60%, #f3e5f5 100%);
-            color: #1976d2;
-        }
-        
-        .history-table tr:nth-child(even) {
-            background: #f5f5f5;
-        }
-        
-        .chart-container {
-            width: 100%;
-            max-width: 520px;
-            margin: 28px auto 0 auto;
-            background: #fff;
-            border-radius: 10px;
-            box-shadow: 0 0 10px #b3c6e7;
-            padding: 22px;
-        }
-        
-        pre {
-            background: #f3e5f5;
-            border-radius: 6px;
-            padding: 12px;
-        }
-        /* New Beautiful Layout Styles */
-        
-        .info-card {
-            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
-            border-radius: 12px;
-            margin-bottom: 24px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-            border: 1px solid #e1f5fe;
-        }
-        
-        .card-header {
-            background: linear-gradient(90deg, #1976d2 60%, #8e24aa 100%);
-            color: white;
-            padding: 16px 24px;
-        }
-        
-        .card-header h3 {
-            margin: 0;
-            font-size: 1.2em;
-            font-weight: 600;
-        }
-        
-        .card-content {
-            padding: 20px 24px;
-        }
-        
-        .feature-item {
-            background: rgba(255, 255, 255, 0.7);
-            border-radius: 8px;
-            padding: 12px 16px;
-            margin-bottom: 12px;
-            border-left: 4px solid #1976d2;
-            font-size: 0.95em;
-            line-height: 1.5;
-        }
-        
-        .feature-item:last-child {
-            margin-bottom: 0;
-        }
-        
-        .btn-icon {
-            font-size: 1.5em;
-        }
-        
-        .btn-text {
-            font-weight: 600;
-            font-size: 1.1em;
-        }
-        
-        .btn-desc {
-            font-size: 0.85em;
-            opacity: 0.9;
-        }
-        
-        .status-message {
-            background: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
-            border-radius: 8px;
-            padding: 16px;
-            margin: 20px 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .status-message.success {
-            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
-        }
-        
-        .status-icon {
-            font-size: 1.2em;
-        }
-        
-        .navigation-section {
-            margin-top: 32px;
-        }
-        
-        .nav-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 16px;
-            margin-top: 16px;
-        }
-        
-        .nav-card {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border: 2px solid #dee2e6;
-            border-radius: 12px;
-            padding: 20px;
-            text-decoration: none;
-            color: #495057;
-            transition: all 0.3s;
-        }
-        
-        .nav-card:hover {
-            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
-            border-color: #8e24aa;
-            color: #1976d2;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        
-        .nav-icon {
-            font-size: 2em;
-        }
-        
-        .nav-text {
-            font-weight: 600;
-            font-size: 1.1em;
-        }
-        
-        .nav-desc {
-            font-size: 0.85em;
-            text-align: center;
-            opacity: 0.8;
-        }
+      body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        background: linear-gradient(135deg, #eaf6fb 0%, #f5e6fa 100%);
+        margin: 0;
+      }
+
+      .navbar {
+        background: linear-gradient(90deg, #1976d2 60%, #8e24aa 100%);
+        color: white;
+        padding: 25px 0;
+        text-align: center;
+        font-size: 2.2em;
+        letter-spacing: 3px;
+        box-shadow: 0 4px 12px #b3c6e7;
+      }
+      .nav-links {
+        text-align: center;
+        margin: 20px 0;
+        padding: 15px;
+      }
+      .nav-link {
+        display: inline-block;
+        margin: 0 15px;
+        color: #1976d2;
+        background: #fff;
+        border-radius: 8px;
+        padding: 12px 24px;
+        text-decoration: none;
+        font-weight: 600;
+        border: 2px solid #1976d2;
+        transition: all 0.3s;
+        font-size: 1.1em;
+      }
+      .nav-link:hover {
+        background: #1976d2;
+        color: #fff;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      }
+
+      .container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 90vh;
+      }
+
+      .dashboard-box {
+        background: white;
+        padding: 36px 32px 28px 32px;
+        border-radius: 16px;
+        box-shadow: 0px 0px 18px #b3c6e7;
+        width: 100%;
+        max-width: 900px;
+        margin-top: 40px;
+        margin-bottom: 40px;
+      }
+
+      h2 {
+        text-align: center;
+        margin-bottom: 18px;
+        color: #8e24aa;
+        letter-spacing: 1px;
+      }
+
+      .section-title {
+        color: #1976d2;
+        font-size: 1.15em;
+        margin-top: 28px;
+        margin-bottom: 10px;
+        font-weight: 700;
+        letter-spacing: 1px;
+      }
+
+      ul {
+        background: #f5f5f5;
+        border-radius: 6px;
+        padding: 18px;
+        list-style: none;
+      }
+
+      li {
+        margin-bottom: 8px;
+        font-size: 1em;
+        color: #333;
+      }
+
+      .footer {
+        text-align: center;
+        color: #888;
+        font-size: 0.95em;
+        margin-top: 30px;
+      }
+
+      .back-link {
+        display: block;
+        text-align: center;
+        margin: 18px 0 0 0;
+        color: #8e24aa;
+        text-decoration: underline;
+        font-size: 1.05em;
+        font-weight: 500;
+      }
+
+      .back-link:hover {
+        color: #1976d2;
+      }
+
+      .stat-box {
+        background: linear-gradient(90deg, #e3f2fd 60%, #f3e5f5 100%);
+        border-radius: 8px;
+        padding: 14px 22px;
+        margin-bottom: 16px;
+        font-size: 1.08em;
+        color: #1976d2;
+        box-shadow: 0 1px 6px #b3c6e7;
+      }
+
+      .history-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        margin-bottom: 18px;
+      }
+
+      .history-table th,
+      .history-table td {
+        border: 1px solid #b3c6e7;
+        padding: 10px 12px;
+        text-align: left;
+        font-size: 1em;
+      }
+
+      .history-table th {
+        background: linear-gradient(90deg, #e3f2fd 60%, #f3e5f5 100%);
+        color: #1976d2;
+      }
+
+      .history-table tr:nth-child(even) {
+        background: #f5f5f5;
+      }
+
+      .chart-container {
+        width: 100%;
+        max-width: 520px;
+        margin: 28px auto 0 auto;
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 0 10px #b3c6e7;
+        padding: 22px;
+      }
+
+      pre {
+        background: #f3e5f5;
+        border-radius: 6px;
+        padding: 12px;
+      }
+      /* New Beautiful Layout Styles */
+
+      .info-card {
+        background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+        border-radius: 12px;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        border: 1px solid #e1f5fe;
+      }
+
+      .card-header {
+        background: linear-gradient(90deg, #1976d2 60%, #8e24aa 100%);
+        color: white;
+        padding: 16px 24px;
+      }
+
+      .card-header h3 {
+        margin: 0;
+        font-size: 1.2em;
+        font-weight: 600;
+      }
+
+      .card-content {
+        padding: 20px 24px;
+      }
+
+      .feature-item {
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 12px;
+        border-left: 4px solid #1976d2;
+        font-size: 0.95em;
+        line-height: 1.5;
+      }
+
+      .feature-item:last-child {
+        margin-bottom: 0;
+      }
+
+      .btn-icon {
+        font-size: 1.5em;
+      }
+
+      .btn-text {
+        font-weight: 600;
+        font-size: 1.1em;
+      }
+
+      .btn-desc {
+        font-size: 0.85em;
+        opacity: 0.9;
+      }
+
+      .status-message {
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+        border-radius: 8px;
+        padding: 16px;
+        margin: 20px 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .status-message.success {
+        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+      }
+
+      .status-icon {
+        font-size: 1.2em;
+      }
+
+      .navigation-section {
+        margin-top: 32px;
+      }
+
+      .nav-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+        margin-top: 16px;
+      }
+
+      .nav-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border: 2px solid #dee2e6;
+        border-radius: 12px;
+        padding: 20px;
+        text-decoration: none;
+        color: #495057;
+        transition: all 0.3s;
+      }
+
+      .nav-card:hover {
+        background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+        border-color: #8e24aa;
+        color: #1976d2;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+
+      .nav-icon {
+        font-size: 2em;
+      }
+
+      .nav-text {
+        font-weight: 600;
+        font-size: 1.1em;
+      }
+
+      .nav-desc {
+        font-size: 0.85em;
+        text-align: center;
+        opacity: 0.8;
+      }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
+  </head>
 
-<body>
+  <body>
     <div class="navbar">🏥 Student Mental Health Clinic</div>
     <div class="nav-links">
-        <a class="nav-link" href="/upload">📤 Upload Data</a>
-        {% if session['username'] == 'admin' %}
-        <a class="nav-link" href="/dashboard">📊 Admin Dashboard</a>
-        {% endif %}
-        <a class="nav-link" href="/logout">🚪 Sign Out</a>
+      <a class="nav-link" href="/upload">📤 Upload Data</a>
+      {% if session['username'] == 'admin' %}
+      <a class="nav-link" href="/dashboard">📊 Admin Dashboard</a>
+      {% endif %}
+      <a class="nav-link" href="/logout">🚪 Sign Out</a>
     </div>
     <div class="container">
-        <div class="dashboard-box">
-            <h2>Admin Dashboard</h2>
-            <div class="stat-box">Total Records: <b>{{ total_records }}</b></div>
-            <div class="stat-box">Total Uploads: <b>{{ total_uploads }}</b></div>
-            <div class="stat-box">Last Retrain: <b>{{ last_retrain }}</b></div>
-            <div class="stat-box">Retrain Method: <b>Performance-Based (F1 & Accuracy)</b></div>
-            <div class="stat-box">Class Imbalance Handling: <b>{{ imbalance_method }}</b></div>
-            <div class="stat-box">Performance Threshold: <b>Auto-Tuned (Current: 5%)</b></div>
-            <div class="section-title">Recent Activity</div>
-            <ul>
-                {% for log in logs %}
-                <li>{{ log }}</li>
-                {% endfor %}
-            </ul>
-            <div class="section-title">Upload History</div>
-            <table class="history-table">
-                <tr>
-                    <th>User</th>
-                    <th>File</th>
-                    <th>Time</th>
-                </tr>
-                {% for entry in upload_history %}
-                <tr>
-                    <td>{{ entry.user }}</td>
-                    <td>{{ entry.filename }}</td>
-                    <td>{{ entry.time }}</td>
-                </tr>
-                {% endfor %}
-            </table>
-            <div class="section-title">User Login Activity</div>
-            <table class="history-table">
-                <tr>
-                    <th>User</th>
-                    <th>Time</th>
-                </tr>
-                {% for entry in login_history %}
-                <tr>
-                    <td>{{ entry.user }}</td>
-                    <td>{{ entry.time }}</td>
-                </tr>
-                {% endfor %}
-            </table>
-            <div class="section-title">Model Performance</div>
-            <div style="background:#f5f5f5; border-radius:6px; padding:14px; margin-bottom:16px; font-size:0.98em; color:#333;">
-                {% if model_metrics %}
-                <pre style="white-space:pre-wrap; word-break:break-word;">{{ model_metrics }}</pre> {% else %}
-                <span>No metrics available yet. Retrain the model to see performance.</span> {% endif %}
-            </div>
-            <div class="section-title">Retrain Model</div>
-            <div style="text-align: center; margin: 20px 0;">
-                <button id="retrainButton" class="nav-link" style="cursor: pointer;" onclick="retrainModel()">
-                    🔄 Retrain Model
-                </button>
-                <div id="retrainStatus" style="margin-top: 10px; color: #1976d2;"></div>
-            </div>
-            <script>
-                function retrainModel() {
-                    const button = document.getElementById('retrainButton');
-                    const status = document.getElementById('retrainStatus');
-                    
-                    // Disable button and show loading state
-                    button.disabled = true;
-                    button.style.opacity = '0.7';
-                    status.textContent = 'Retraining model... This may take a few minutes.';
-                    
-                    // Send request to retrain endpoint
-                    fetch('/retrain_model', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            status.style.color = '#4CAF50';
-                            status.textContent = '✅ ' + data.message;
-                            // Reload page after 2 seconds to show updated metrics
-                            setTimeout(() => window.location.reload(), 2000);
-                        } else {
-                            status.style.color = '#f44336';
-                            status.textContent = '❌ ' + (data.message || 'Retraining failed. Please try again.');
-                            button.disabled = false;
-                            button.style.opacity = '1';
-                        }
-                    })
-                    .catch(error => {
-                        status.style.color = '#f44336';
-                        status.textContent = '❌ Error: Could not connect to server';
-                        button.disabled = false;
-                        button.style.opacity = '1';
-                    });
-                }
-            </script>
-
-
-
-            <div class="section-title">Upload Trends</div>
-            <div class="chart-container">
-                <canvas id="uploadTrendsChart"></canvas>
-            </div>
-            <script>
-                const uploadTrendsData = {{ upload_trends_data | tojson }};
-                const ctx = document.getElementById('uploadTrendsChart').getContext('2d');
-                new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: uploadTrendsData.labels,
-                        datasets: [{
-                            label: 'Uploads per Day',
-                            data: uploadTrendsData.counts,
-                            backgroundColor: ['#1976d2', '#4CAF50', '#8e24aa', '#ffb300', '#00bcd4', '#f44336', '#43a047'],
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            legend: {
-                                display: false
-                            }
-                        },
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: 'Date'
-                                }
-                            },
-                            y: {
-                                title: {
-                                    display: true,
-                                    text: 'Uploads'
-                                },
-                                beginAtZero: true
-                            }
-                        }
-                    }
-                });
-            </script>
-            <div class="section-title">Model Performance History</div>
-            <div class="chart-container">
-                <canvas id="performanceChart"></canvas>
-            </div>
-            <script>
-                const performanceData = {{ performance_history_data | tojson }};
-                const ctxPerformance = document.getElementById('performanceChart').getContext('2d');
-                new Chart(ctxPerformance, {
-                    type: 'line',
-                    data: {
-                        labels: performanceData.labels,
-                        datasets: [{
-                            label: 'Accuracy (%)',
-                            data: performanceData.accuracy,
-                            backgroundColor: 'rgba(25, 118, 210, 0.1)',
-                            borderColor: '#1976d2',
-                            borderWidth: 2,
-                            fill: false,
-                            tension: 0.1
-                        }, {
-                            label: 'F1-Score (%)',
-                            data: performanceData.f1_score,
-                            backgroundColor: 'rgba(142, 36, 170, 0.1)',
-                            borderColor: '#8e24aa',
-                            borderWidth: 2,
-                            fill: false,
-                            tension: 0.1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            legend: {
-                                display: true,
-                                position: 'top'
-                            },
-                            title: {
-                                display: true,
-                                text: 'Model Performance Over Time'
-                            }
-                        },
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: 'Training Events'
-                                }
-                            },
-                            y: {
-                                title: {
-                                    display: true,
-                                    text: 'Performance (%)'
-                                },
-                                beginAtZero: true,
-                                max: 100
-                            }
-                        }
-                    }
-                });
-            </script>
-            <!-- Intelligent System Features -->
-            <div class="section-title">🤖 Intelligent System Features</div>
-
-            <!-- Auto-Tuning System Info Card -->
-            <div class="info-card">
-                <div class="card-header">
-                    <h3>🎯 Intelligent Auto-Tuning System</h3>
-                </div>
-                <div class="card-content">
-                    <div class="feature-item">
-                        <strong>Performance-Based Retraining:</strong> Monitors model accuracy and F1-score on new predictions. Automatically retrains when performance drops by >5% from baseline.
-                    </div>
-                    <div class="feature-item">
-                        <strong>Dynamic Thresholds:</strong> Performance thresholds start at 5% and adjust based on model stability and data patterns.
-                    </div>
-                    <div class="feature-item">
-                        <strong>Drift Detection:</strong> Uses statistical tests to detect when incoming data significantly differs from training distribution.
-                    </div>
-                    <div class="feature-item">
-                        <strong>Class Balance:</strong> Automatically handles imbalanced datasets with intelligent method selection (SMOTE, class weights, etc.).
-                    </div>
-                </div>
-            </div>
-
-            <!-- Status Message -->
-            {% if status_message %}
-            <div class="status-message success">
-                <span class="status-icon">✅</span> {{ status_message }}
-            </div>
-            {% endif %}
-
-            <!-- Navigation Links -->
-            <div class="navigation-section">
-                <div class="section-title">🔗 Quick Navigation</div>
-                <div class="nav-grid">
-                    <a class="nav-card" href="/upload">
-                        <span class="nav-icon">📄</span>
-                        <span class="nav-text">Upload Page</span>
-                        <span class="nav-desc">Submit new data for prediction</span>
-                    </a>
-                    <a class="nav-card" href="{{ last_result_url if last_result_url else '/upload' }}">
-                        <span class="nav-icon">📊</span>
-                        <span class="nav-text">Last Result</span>
-                        <span class="nav-desc">View most recent prediction</span>
-                    </a>
-                </div>
-            </div>
+      <div class="dashboard-box">
+        <h2>Admin Dashboard</h2>
+        <div class="stat-box">Total Records: <b>{{ total_records }}</b></div>
+        <div class="stat-box">Last Retrain: <b>{{ last_retrain }}</b></div>
+        <div class="stat-box">
+          Class Imbalance Handling: <b>{{ imbalance_method }}</b>
         </div>
+        <div class="section-title">Recent Activity</div>
+        <ul>
+          {% for log in logs %}
+          <li>{{ log }}</li>
+          {% endfor %}
+        </ul>
+        <div class="section-title">Upload History</div>
+        <table class="history-table">
+          <tr>
+            <th>User</th>
+            <th>File</th>
+            <th>Time</th>
+          </tr>
+          {% for entry in upload_history %}
+          <tr>
+            <td>{{ entry.user }}</td>
+            <td>{{ entry.filename }}</td>
+            <td>{{ entry.time }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+        <div class="section-title">User Login Activity</div>
+        <table class="history-table">
+          <tr>
+            <th>User</th>
+            <th>Time</th>
+          </tr>
+          {% for entry in login_history %}
+          <tr>
+            <td>{{ entry.user }}</td>
+            <td>{{ entry.time }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+        <div class="section-title">Model Performance</div>
+        <div
+          style="
+            background: #f5f5f5;
+            border-radius: 6px;
+            padding: 14px;
+            margin-bottom: 16px;
+            font-size: 0.98em;
+            color: #333;
+          "
+        >
+          {% if model_metrics %}
+          <pre style="white-space: pre-wrap; word-break: break-word">
+{{ model_metrics }}</pre
+          >
+          {% else %}
+          <span
+            >No metrics available yet. Retrain the model to see
+            performance.</span
+          >
+          {% endif %}
+        </div>
+        <div class="section-title">Retrain Model</div>
+        <div style="text-align: center; margin: 20px 0">
+          <button
+            id="retrainButton"
+            class="nav-link"
+            style="cursor: pointer"
+            onclick="retrainModel()"
+          >
+            🔄 Retrain Model
+          </button>
+          <div
+            id="retrainStatus"
+            style="margin-top: 10px; color: #1976d2"
+          ></div>
+        </div>
+        <script>
+          function retrainModel() {
+            const button = document.getElementById("retrainButton");
+            const status = document.getElementById("retrainStatus");
+
+            // Disable button and show loading state
+            button.disabled = true;
+            button.style.opacity = "0.7";
+            status.textContent =
+              "Retraining model... This may take a few minutes.";
+
+            // Send request to retrain endpoint
+            fetch("/retrain_model", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            })
+              .then((response) => response.json())
+              .then((data) => {
+                if (data.success) {
+                  status.style.color = "#4CAF50";
+                  status.textContent = "✅ " + data.message;
+                  // Reload page after 2 seconds to show updated metrics
+                  setTimeout(() => window.location.reload(), 2000);
+                } else {
+                  status.style.color = "#f44336";
+                  status.textContent =
+                    "❌ " +
+                    (data.message || "Retraining failed. Please try again.");
+                  button.disabled = false;
+                  button.style.opacity = "1";
+                }
+              })
+              .catch((error) => {
+                status.style.color = "#f44336";
+                status.textContent = "❌ Error: Could not connect to server";
+                button.disabled = false;
+                button.style.opacity = "1";
+              });
+          }
+        </script>
+        <div class="section-title">Model Performance History</div>
+        <div class="chart-container">
+          <canvas id="performanceChart"></canvas>
+        </div>
+        <script>
+          const performanceData = {{ performance_history_data | tojson }};
+          const ctxPerformance = document.getElementById('performanceChart').getContext('2d');
+          new Chart(ctxPerformance, {
+              type: 'line',
+              data: {
+                  labels: performanceData.labels,
+                  datasets: [{
+                      label: 'Accuracy (%)',
+                      data: performanceData.accuracy,
+                      backgroundColor: 'rgba(25, 118, 210, 0.1)',
+                      borderColor: '#1976d2',
+                      borderWidth: 2,
+                      fill: false,
+                      tension: 0.1
+                  }, {
+                      label: 'F1-Score (%)',
+                      data: performanceData.f1_score,
+                      backgroundColor: 'rgba(142, 36, 170, 0.1)',
+                      borderColor: '#8e24aa',
+                      borderWidth: 2,
+                      fill: false,
+                      tension: 0.1
+                  }]
+              },
+              options: {
+                  responsive: true,
+                  plugins: {
+                      legend: {
+                          display: true,
+                          position: 'top'
+                      },
+                      title: {
+                          display: true,
+                          text: 'Model Performance Over Time'
+                      }
+                  },
+                  scales: {
+                      x: {
+                          title: {
+                              display: true,
+                              text: 'Training Events'
+                          }
+                      },
+                      y: {
+                          title: {
+                              display: true,
+                              text: 'Performance (%)'
+                          },
+                          beginAtZero: true,
+                          max: 100
+                      }
+                  }
+              }
+          });
+        </script>
+        <!-- Intelligent System Features -->
+        <div class="section-title">🤖 Intelligent System Features</div>
+
+        <!-- Auto-Tuning System Info Card -->
+        <div class="info-card">
+          <div class="card-header">
+            <h3>🎯 Intelligent System</h3>
+          </div>
+          <div class="card-content">
+            <div class="feature-item">
+              <strong>Class Balance:</strong> Automatically handles imbalanced
+              datasets with intelligent method selection (SMOTE, class weights,
+              etc.).
+            </div>
+          </div>
+        </div>
+
+        <!-- Status Message -->
+        {% if status_message %}
+        <div class="status-message success">
+          <span class="status-icon">✅</span> {{ status_message }}
+        </div>
+        {% endif %}
+
+        <!-- Navigation Links -->
+        <div class="navigation-section">
+          <div class="section-title">🔗 Quick Navigation</div>
+          <div class="nav-grid">
+            <a class="nav-card" href="/upload">
+              <span class="nav-icon">📄</span>
+              <span class="nav-text">Upload Page</span>
+              <span class="nav-desc">Submit new data for prediction</span>
+            </a>
+            <a
+              class="nav-card"
+              href="{{ last_result_url if last_result_url else '/upload' }}"
+            >
+              <span class="nav-icon">📊</span>
+              <span class="nav-text">Last Result</span>
+              <span class="nav-desc">View most recent prediction</span>
+            </a>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="footer">&copy; 2025 Student Clinic. All rights reserved.</div>
-</body>
-
+  </body>
 </html>
