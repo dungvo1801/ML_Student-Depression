@@ -1,7 +1,7 @@
 import json
 import pandas as pd
 from util import (
-    predict_depression, 
+    predict_with_ensemble, 
     insert_prediction,
     download_bytes,
     config
@@ -20,7 +20,7 @@ def lambda_handler(event, context):
 
     # Use the proper prediction function from training module
     try:
-        predictions, probabilities = predict_depression(df)
+        predictions, ensemble_proba, ensemble_pred_custom, prediction_method = predict_with_ensemble(df)
         print(f"Generated {len(predictions)} predictions using trained model")
         
     except Exception as e:

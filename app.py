@@ -9,8 +9,11 @@ from utils.login_api import login_api
 from utils.download_template_api import download_template_api
 from utils.predict_api import predict_api
 from utils.upload_api import upload_api
+from utils.download_results_api import download_results_api  
+from utils.upload_validation_api import upload_validation_api
 import io
 import json
+import csv
 
 # Import centralized configuration
 from utils.config import config
@@ -32,31 +35,31 @@ def hello_world():
 def login():
     username = request.form.get('username')
     password = request.form.get('password')
-    authentication = login_api(username=username, password=password)
+    response = login_api(username=username, password=password)
     # Check if user exists and password matches
-    if authentication:
+    if response.json():
+        session['username'] = username
+        session['password'] = password
         return redirect(url_for('upload_file'))
     else:
         # Flash error message and redirect back to login page
         flash('Invalid username or password. Please try again.', 'error')
         return redirect(url_for('hello_world'))
 
-# BE + FE
 @app.route('/upload', methods=['GET', 'POST']) 
 def upload_file():
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     if request.method == 'POST':
         if 'file' not in request.files:
-            flash('No file part')
+            flash('No file part', 'error')
             return redirect(request.url)
         file = request.files['file']
         if file.filename == '':
-            flash('No selected file')
+            flash('No selected file', 'error')
             return redirect(request.url)
         if file:
             file_bytes = file.read()
             response = upload_api(file_bytes=file_bytes, user=session.get('username'), filename=file.filename)
-            print(response.text)
             if response.status_code == 200:
                 response_json = response.json()
                 tmp_file = response_json['tmp_file']
@@ -66,6 +69,27 @@ def upload_file():
          
     return render_template('upload.html', current_time=current_time)
 
+@app.route('/upload_validation', methods=['GET', 'POST']) 
+def upload_validation():
+    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    if request.method == 'POST':
+        if 'validated_file' not in request.files:
+            flash('No file part','error')
+            return redirect(url_for('upload_file')) 
+        file = request.files['validated_file']
+        if file.filename == '':
+            flash('No selected file','error')
+            return redirect(url_for('upload_file')) 
+        if file:
+            file_bytes = file.read()
+            response = upload_validation_api(file_bytes=file_bytes, user=session.get('username'), filename=file.filename)
+            print(response.text)
+            if response.status_code == 200:
+                flash('Insert validation results successfully')
+    return redirect(url_for('upload_file'))
+
+
+
 @app.route('/predict')
 def predict():
     filename = request.args.get('filename')
@@ -73,6 +97,7 @@ def predict():
     # Use the proper prediction function from training module
     try:
         response = predict_api(filename)
+        print(response.json())
         
         if response.status_code != 200:
             flash(f"Failed to fetch CSV from Lambda: Status = {response.status_code}")
@@ -110,7 +135,7 @@ def retrain_model():
     #     flash(f'Note: Retraining failed: {str(retrain_error)}')
     
     try:
-        from models.training import trigger_retrain
+        from lambdas.model_retrain.training import trigger_retrain
         trigger_retrain()
         return jsonify({
             'success': True, 
@@ -154,8 +179,16 @@ def dashboard():
         with open(log_path) as f:
             logs = f.readlines()[-10:]
     # Stats
-    master_path = config.get_data_path()
+    master_path = 'models/student_depression_dataset.csv'
     total_records = 0
+    if os.path.exists(master_path):
+        import pandas as pd
+        df = pd.read_csv(master_path)
+        total_records = df.shape[0]
+        # Convert id to numeric for comparison
+        if 'id' in df.columns:
+            df['id'] = pd.to_numeric(df['id'], errors='coerce')
+
     model_path = config.get_model_path()
     last_retrain = 'N/A'
     if os.path.exists(model_path):
@@ -296,47 +329,43 @@ def logout():
     session.clear()
     return redirect(url_for('hello_world'))
 
-# #BE
-# @app.route('/api/predictions', methods=['GET'])
-# def get_predictions():
-#     """Get prediction history from database"""
-#     try:
-#         conn = sqlite3.connect('predictions.db')
-#         c = conn.cursor()
-#         c.execute('SELECT * FROM predictions ORDER BY timestamp DESC LIMIT 100')
-#         rows = c.fetchall()
-#         conn.close()
-        
-#         # Convert to list of dicts for JSON
-#         results = [
-#             {
-#                 'id': row[0], 
-#                 'user': row[1], 
-#                 'filename': row[2], 
-#                 'input_data': row[3], 
-#                 'prediction': row[4], 
-#                 'timestamp': row[5]
-#             }
-#             for row in rows
-#         ]
-#         return jsonify(results)
-#     except Exception as e:
-#         return jsonify({'error': str(e)}), 500
 
 #FE
 @app.route('/download_results/<filename>')
 def download_results(filename):
     """Download results file with predictions"""
-    try:
-        return send_from_directory(
-            directory=app.config['UPLOAD_FOLDER'], 
-            path=filename, 
-            as_attachment=True,
-            download_name=filename
-        )
-    except FileNotFoundError:
+
+    response = download_results_api()
+    if response.status_code != 200:
         flash('Results file not found.')
         return redirect(url_for('upload_file'))
+
+    # Step 1: Parse JSON string from response
+    data = response.json()
+    if isinstance(data, dict) and "body" in data:
+        data = json.loads(data["body"])  # this is your list of dicts
+
+    if not data:
+        flash('No data to download.')
+        return redirect(url_for('upload_file'))
+
+    # Step 2: Convert to CSV
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=data[0].keys())
+    writer.writeheader()
+    writer.writerows(data)
+
+    # Step 3: Convert to BytesIO for download
+    mem = io.BytesIO()
+    mem.write(output.getvalue().encode('utf-8'))
+    mem.seek(0)
+
+    return send_file(
+        mem,
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=filename
+    )
 
 if __name__ == '__main__':
     import os

@@ -53,6 +53,11 @@
 #     print(f"Retrieved {rows} .")
 #     return rows
 
+# def delete_all_predictions(cursor):
+#     print("Deleting all records from predictions table...")
+#     cursor.execute("DELETE FROM predictions;")
+#     print("All records deleted.")
+
 # def get_prediction_logs(cursor):
 #     print("Fetching user logs...")
     
@@ -80,8 +85,8 @@
 #         with connection.cursor() as cursor:
 #             # show_tables(cursor)
 #             # insert_prediction(cursor, "")
-#             print(get_prediction_logs(cursor))
-#             # get_user_logs(cursor)
+#             # print(get_prediction_logs(cursor))
+#             get_user_logs(cursor)
 
 # except OperationalError as e:
 #     print("❌ Error while connecting to PostgreSQL:", e)
@@ -95,7 +100,7 @@
 import requests
 import base64
 
-url = "https://81it9chkja.execute-api.ap-southeast-1.amazonaws.com/v1/predict" 
+url = "https://81it9chkja.execute-api.ap-southeast-1.amazonaws.com/v1/login" 
 
 filename = "C:/Users/Admin/Desktop/AI/ML_Student-Depression/models/student_depression_dataset.csv"
 
@@ -108,7 +113,8 @@ file_b64 = base64.b64encode(file_bytes).decode('utf-8')
 
 
 payload = {
-    "filename": "tmp20250910150412.csv"
+    "username": "asd",
+    "password" : "password"
 }
 
 headers = {
@@ -160,8 +166,6 @@ print(response.text)
 # from lambdas.model_predict.lambda_function import lambda_handler
 
 # lambda_handler(event="", context="")
-
-
 
 
 

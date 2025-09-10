@@ -6,9 +6,7 @@ import io
 import psycopg2
 from psycopg2 import OperationalError
 from util import (
-    get_master_data,
-    insert_upload_log,
-    upload_bytes,
+    insert_validation,
     validate_and_clean_data,
     config
 )
@@ -17,9 +15,6 @@ from util import (
 def lambda_handler(event, context):
     body = json.loads(event['body']) 
     file_bytes = body.get('file_bytes')
-    filename = body.get('filename')
-    user = body.get('user')
-
     try:
 
         file_bytes = base64.b64decode(file_bytes)
@@ -42,33 +37,22 @@ def lambda_handler(event, context):
 
             with connection:
                 with connection.cursor() as cursor:
-                    master_df = get_master_data(cursor)
-                    # Exclude all prediction-related columns when comparing with uploaded file
-                    prediction_cols = ['Depression', "Id"]
-                    new_df = new_df.drop(columns=['id'])
-
-                    master_cols = [col.lower() for col in master_df.columns if col.lower() not in [c.lower() for c in prediction_cols]]
-                    new_cols = [col.lower() for col in new_df.columns]
-                    
-                    if set(new_cols) != set(master_cols):
-                        print('Uploaded file columns do not match required features. Please use the correct template.')
+                    success = insert_validation(cursor, new_df)
+                    if success:
+                        return {
+                            "statusCode": 200,
+                            "headers": {"Content-Type": "application/json"},
+                            "body": "Successfully validation prediction data",
+                            "isBase64Encoded": False
+                        }
+                    else:
                         return {
                             "statusCode": 400,
-                            "body": "Uploaded file columns do not match required features. Please use the correct template."
+                            "headers": {"Content-Type": "application/json"},
+                            "body": f"Error processing file: {str(e)}. Please check your data format and try again.",
+                            "isBase64Encoded": False
                         }
-                    # Add empty 'Depression' column for new records
-                    tmp_file = f"tmp{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
-                    upload_bytes(s3_key=tmp_file, file_bytes=file_bytes)
-                    insert_upload_log(cursor, (user, filename))
-                    return {
-                        "statusCode": 200,
-                        "headers": {"Content-Type": "application/json"},
-                        "body": json.dumps({
-                            "message": "File uploaded and validated successfully.",
-                            "tmp_file": tmp_file
-                        }),
-                        "isBase64Encoded": False
-                    }
+
 
         except OperationalError as e:
             print("Error while connecting to PostgreSQL:", e)
