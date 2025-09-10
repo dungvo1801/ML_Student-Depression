@@ -88,60 +88,127 @@ def insert_prediction(cursor, df):
     print(f"Inserted {len(values)} record(s) with Validation = None.")
 
 
-def predict_depression(X_new, use_ensemble=True):
-    """
-    Make predictions using ensemble method or best individual model.
+# def predict_depression(X_new, use_ensemble=True):
+#     """
+#     Make predictions using ensemble method or best individual model.
     
-    Args:
-        X_new: New data to predict
-        use_ensemble: If True, uses weighted ensemble; if False, uses best individual model
+#     Args:
+#         X_new: New data to predict
+#         use_ensemble: If True, uses weighted ensemble; if False, uses best individual model
     
-    Returns:
-        predictions, probabilities, method_used
-    """
-    try:
+#     Returns:
+#         predictions, probabilities, method_used
+#     """
+#     try:
 
-        # # Download model and preprocessing info from S3
-        # model_bytes = download_bytes(os.getenv('RF_MODEL_KEY'))
-        # preprocessing_bytes = download_bytes(os.getenv('PREPROCESSING_MODEL_KEY'))
+#         # # Download model and preprocessing info from S3
+#         # model_bytes = download_bytes(os.getenv('RF_MODEL_KEY'))
+#         # preprocessing_bytes = download_bytes(os.getenv('PREPROCESSING_MODEL_KEY'))
 
-        # if model_bytes is None or preprocessing_bytes is None:
-        #     raise Exception("Failed to download model or preprocessing files from S3")
+#         # if model_bytes is None or preprocessing_bytes is None:
+#         #     raise Exception("Failed to download model or preprocessing files from S3")
 
-        # # Deserialize the downloaded bytes into Python objects
-        # model = pickle.loads(model_bytes)
-        # preprocessing_info = pickle.loads(preprocessing_bytes)
+#         # # Deserialize the downloaded bytes into Python objects
+#         # model = pickle.loads(model_bytes)
+#         # preprocessing_info = pickle.loads(preprocessing_bytes)
         
-        model_bytes = download_bytes(os.getenv('RF_MODEL_KEY'))
-        log_model_bytes =  download_bytes(os.getenv('LOG_MODEL_KEY'))
-        ensemble_model_bytes =  download_bytes(os.getenv('ENSEMBLE_KEY'))
+#         model_bytes = download_bytes(os.getenv('RF_MODEL_KEY'))
+#         log_model_bytes =  download_bytes(os.getenv('LOG_MODEL_KEY'))
+#         ensemble_model_bytes =  download_bytes(os.getenv('ENSEMBLE_KEY'))
         
-        rf_model = joblib.load(io.BytesIO(model_bytes))
-        log_model = joblib.load(io.BytesIO(log_model_bytes))
-        ensemble_info = joblib.load(io.BytesIO(ensemble_model_bytes))
+#         rf_model = joblib.load(io.BytesIO(model_bytes))
+#         log_model = joblib.load(io.BytesIO(log_model_bytes))
+#         ensemble_info = joblib.load(io.BytesIO(ensemble_model_bytes))
 
-        if use_ensemble:
-            # Get predictions from both models
-            rf_proba = rf_model.predict_proba(X_new)[:, 1]
-            log_proba = log_model.predict_proba(X_new)[:, 1]
+#         if use_ensemble:
+#             # Get predictions from both models
+#             rf_proba = rf_model.predict_proba(X_new)[:, 1]
+#             log_proba = log_model.predict_proba(X_new)[:, 1]
             
-            # Weighted ensemble
-            ensemble_proba = (ensemble_info['rf_weight'] * rf_proba + 
-                            ensemble_info['log_weight'] * log_proba)
-            ensemble_pred = (ensemble_proba >= ensemble_info['ensemble_threshold']).astype(int)
+#             # Weighted ensemble
+#             ensemble_proba = (ensemble_info['rf_weight'] * rf_proba + 
+#                             ensemble_info['log_weight'] * log_proba)
+#             ensemble_pred = (ensemble_proba >= ensemble_info['ensemble_threshold']).astype(int)
             
-            return ensemble_pred, ensemble_proba, "Weighted Ensemble"
-        else:
-            # Use best individual model
-            if ensemble_info['best_model'] == 'Random Forest':
-                pred = rf_model.predict(X_new)
-                proba = rf_model.predict_proba(X_new)[:, 1]
-                return pred, proba, "Random Forest"
-            else:
-                pred = log_model.predict(X_new)
-                proba = log_model.predict_proba(X_new)[:, 1]
-                return pred, proba, "Logistic Regression"
+#             return ensemble_pred, ensemble_proba, "Weighted Ensemble"
+#         else:
+#             # Use best individual model
+#             if ensemble_info['best_model'] == 'Random Forest':
+#                 pred = rf_model.predict(X_new)
+#                 proba = rf_model.predict_proba(X_new)[:, 1]
+#                 return pred, proba, "Random Forest"
+#             else:
+#                 pred = log_model.predict(X_new)
+#                 proba = log_model.predict_proba(X_new)[:, 1]
+#                 return pred, proba, "Logistic Regression"
                 
-    except Exception as e:
-        print(f"Error in ensemble prediction: {e}")
-        return None, None, "Error"
+#     except Exception as e:
+#         print(f"Error in ensemble prediction: {e}")
+#         return None, None, "Error"
+
+
+def predict_with_ensemble(X_test, custom_threshold=0.3):
+    """
+    Make predictions using ensemble of models with fallback mechanisms
+    """
+    model_bytes = download_bytes(os.getenv('RF_MODEL_KEY'))
+    log_model_bytes =  download_bytes(os.getenv('LOG_MODEL_KEY'))
+    ensemble_model_bytes =  download_bytes(os.getenv('ENSEMBLE_KEY'))
+    
+    rf_model = joblib.load(io.BytesIO(model_bytes))
+    log_model = joblib.load(io.BytesIO(log_model_bytes))
+    ensemble_info = joblib.load(io.BytesIO(ensemble_model_bytes))
+
+    rf_pred = None
+    rf_proba = None
+    log_pred = None
+    log_proba = None
+    
+    # Get predictions from Random Forest (with fallback)
+    if rf_model is not None:
+        try:
+            rf_pred = rf_model.predict(X_test)
+            rf_proba = rf_model.predict_proba(X_test)[:, 1]
+        except Exception as e:
+            print(f"Random Forest prediction failed: {e}")
+            rf_pred = None
+            rf_proba = None
+    
+    # Get predictions from Logistic Regression (with fallback)
+    if log_model is not None:
+        try:
+            log_pred = log_model.predict(X_test)
+            log_proba = log_model.predict_proba(X_test)[:, 1]
+        except Exception as e:
+            print(f"Logistic Regression prediction failed: {e}")
+            log_pred = None
+            log_proba = None
+    
+    # Determine prediction strategy based on available models
+    if rf_proba is not None and log_proba is not None:
+        # Both models available - use ensemble
+        ensemble_proba = (ensemble_info['rf_weight'] * rf_proba + 
+                         ensemble_info['log_weight'] * log_proba)
+        ensemble_pred = (ensemble_proba >= 0.5).astype(int)
+        ensemble_pred_custom = (ensemble_proba >= custom_threshold).astype(int)
+        prediction_method = "Ensemble (Both Models)"
+        
+    elif rf_proba is not None:
+        # Only Random Forest available
+        ensemble_proba = rf_proba
+        ensemble_pred = rf_pred
+        ensemble_pred_custom = (rf_proba >= custom_threshold).astype(int)
+        prediction_method = "Random Forest Only (Fallback)"
+        
+    elif log_proba is not None:
+        # Only Logistic Regression available
+        ensemble_proba = log_proba
+        ensemble_pred = log_pred
+        ensemble_pred_custom = (log_proba >= custom_threshold).astype(int)
+        prediction_method = "Logistic Regression Only (Fallback)"
+        
+    else:
+        # No models available
+        return [], [], [], "No Models Available"
+    
+    return ensemble_pred.tolist(), ensemble_proba.tolist(), ensemble_pred_custom.tolist(), prediction_method

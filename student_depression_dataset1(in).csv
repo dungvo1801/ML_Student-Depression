@@ -1,0 +1,9 @@
+id,Gender,Age,City,Profession,Academic Pressure,Work Pressure,CGPA,Study Satisfaction,Job Satisfaction,Sleep Duration,Dietary Habits,Degree,Have you ever had suicidal thoughts ?,Work/Study Hours,Financial Stress,Family History of Mental Illness
+1,Male,33,Visakhapatnam,Student,5,0,8.97,2,0,'5-6 hours',Healthy,B.Pharm,Yes,3,1,No
+2,Female,24,Bangalore,Student,2,0,5.9,5,0,'5-6 hours',Moderate,BSc,No,3,2,Yes
+3,Male,33,Visakhapatnam,Student,5,0,8.97,2,0,'5-6 hours',Healthy,B.Pharm,Yes,3,1,No
+4,Female,24,Bangalore,Student,2,0,5.9,5,0,'5-6 hours',Moderate,BSc,No,3,2,Yes
+5,Male,33,Visakhapatnam,Student,5,0,8.97,2,0,'5-6 hours',Healthy,B.Pharm,Yes,3,1,No
+6,Female,24,Bangalore,Student,2,0,5.9,5,0,'5-6 hours',Moderate,BSc,No,3,2,Yes
+7,Male,33,Visakhapatnam,Student,5,0,8.97,2,0,'5-6 hours',Healthy,B.Pharm,Yes,3,1,No
+8,Female,24,Bangalore,Student,2,0,5.9,5,0,'5-6 hours',Moderate,BSc,No,3,2,Yes
