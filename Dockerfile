@@ -19,16 +19,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
+# Set Flask environment variables
+# ENV FLASK_APP=app.py
+# ENV FLASK_RUN_HOST=0.0.0.0
+# ENV FLASK_RUN_PORT=8080
+# ENV FLASK_ENV=production
+
+# AWS App Runner expects the app to run on PORT=8080
+# ENV PORT=8080
+
 # Expose the Flask port
 EXPOSE 8080
 
-# Set environment variables for Flask
-ENV FLASK_APP=app.py
-ENV FLASK_ENV=production
-
-# AWS App Runner expects the app to run on PORT=8080
-ENV PORT=8080
-
 # Start the Flask app
-CMD ["flask", "run"]
+CMD ["python", "app.py"]
 
