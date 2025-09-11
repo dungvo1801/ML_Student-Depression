@@ -5,7 +5,7 @@ from datetime import datetime
 import io
 import psycopg2
 from psycopg2 import OperationalError
-from util import (
+from lambdas.upload.util import (
     get_master_data,
     insert_upload_log,
     upload_bytes,

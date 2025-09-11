@@ -228,8 +228,7 @@ def download_results(filename):
 
 if __name__ == '__main__':
     import os
-    # Use environment PORT variable for cloud deployment, fallback to 5001
-    port = int(os.environ.get('PORT', 5001))
+    port = int(os.environ.get('PORT', 8080))
     # For production: bind to all interfaces and disable debug
     debug_mode = os.environ.get('FLASK_ENV', 'development') == 'development'
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
