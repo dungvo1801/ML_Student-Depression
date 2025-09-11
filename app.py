@@ -88,6 +88,9 @@ def upload_validation():
             print(response.text)
             if response.status_code == 200:
                 flash('Insert validation results successfully')
+            else:
+                flash("Wrong data format. Please check your data format and try again.", 'validated_upload')
+                return redirect(url_for('upload_file'))
     return redirect(url_for('upload_file'))
 
 
@@ -227,9 +230,5 @@ def download_results(filename):
     )
 
 if __name__ == '__main__':
-    import os
-    # Use environment PORT variable for cloud deployment, fallback to 5001
-    port = int(os.environ.get('PORT', 5001))
-    # For production: bind to all interfaces and disable debug
-    debug_mode = os.environ.get('FLASK_ENV', 'development') == 'development'
-    app.run(host='0.0.0.0', port=port, debug=debug_mode)
+
+    app.run(host='0.0.0.0', port=8080)

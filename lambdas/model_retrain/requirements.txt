@@ -1,6 +1,0 @@
-scikit-learn
-pandas
-numpy
-psycopg2-binary
-dotenv
-boto3
