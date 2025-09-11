@@ -212,3 +212,10 @@ def predict_with_ensemble(X_test, custom_threshold=0.3):
         return [], [], [], "No Models Available"
     
     return ensemble_pred.tolist(), ensemble_proba.tolist(), ensemble_pred_custom.tolist(), prediction_method
+
+
+
+
+
+
+
