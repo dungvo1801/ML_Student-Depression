@@ -11,6 +11,8 @@ from utils.predict_api import predict_api
 from utils.upload_api import upload_api
 from utils.download_results_api import download_results_api  
 from utils.upload_validation_api import upload_validation_api
+from utils.retrain_api import retrain_api
+from utils.get_dashboard_api import get_dashboard_api
 import io
 import json
 import csv
@@ -123,26 +125,11 @@ def predict():
 @app.route('/retrain_model', methods=['POST'])
 def retrain_model():
 
-    # """Endpoint to handle model retraining"""
-    # if session.get('username') != 'admin':
-    #     return jsonify({'success': False, 'message': 'Access denied: Admins only.'})
-    
-    # try:
-    #     from models.training import trigger_retrain
-    #     trigger_retrain()  # This will only retrain if needed
-    # except Exception as retrain_error:
-    #     # Log the error but don't fail the upload
-    #     flash(f'Note: Retraining failed: {str(retrain_error)}')
-    
-    try:
-        from lambdas.model_retrain.training import trigger_retrain
-        trigger_retrain()
-        return jsonify({
-            'success': True, 
-            'message': 'Model retrained successfully! Dashboard will refresh to show updated metrics.'
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'Retraining failed: {str(e)}'})
+    response = retrain_api()
+    if response.status_code == 200:
+        pass
+    else: 
+        pass
 
 
 #BE
@@ -151,7 +138,7 @@ def download_template():
     response = download_template_api()
 
     if response.status_code != 200:
-        return "Failed to fetch CSV from Lambda", 500
+        pass
 
     file_bytes = response.content 
 
@@ -172,157 +159,29 @@ def dashboard():
     if session.get('username') != 'admin':
         flash('Access denied: Admins only.')
         return redirect(url_for('upload_file'))
-    # Example: Read log file and show last 10 events
-    log_path = os.path.join(config.config["paths"]["logs_dir"], 'app.log')
-    logs = []
-    if os.path.exists(log_path):
-        with open(log_path) as f:
-            logs = f.readlines()[-10:]
-    # Stats
-    master_path = 'models/student_depression_dataset.csv'
-    total_records = 0
-    if os.path.exists(master_path):
-        import pandas as pd
-        df = pd.read_csv(master_path)
-        total_records = df.shape[0]
-        # Convert id to numeric for comparison
-        if 'id' in df.columns:
-            df['id'] = pd.to_numeric(df['id'], errors='coerce')
 
-    model_path = config.get_model_path()
-    last_retrain = 'N/A'
-    if os.path.exists(model_path):
-        last_retrain = datetime.fromtimestamp(os.path.getmtime(model_path)).strftime('%Y-%m-%d %H:%M:%S')
-    # Read upload history
-    upload_history = []
-    upload_log_path = config.get_upload_history_path()
-    if os.path.exists(upload_log_path):
-        import csv
-        with open(upload_log_path, newline='') as csvfile:
-            reader = csv.DictReader(csvfile)
-            upload_history = list(reader)[-100:]
-    # Prepare upload trends data for chart
-    from collections import Counter
-    date_counts = Counter()
-    for entry in upload_history:
-        try:
-            date = entry['time'][:10]  # YYYY-MM-DD
-            date_counts[date] += 1
-        except Exception:
-            continue
-    sorted_dates = sorted(date_counts.keys())
-    upload_trends_data = {
-        'labels': sorted_dates,
-        'counts': [date_counts[d] for d in sorted_dates]
-    }
-    # Read model metrics
-    model_metrics = None
-    imbalance_method = "Class Weights (Auto)"
-    class_distribution = "Not Available"
-    imbalance_ratio = "Not Available"
-   
-    metrics_path = config.get_metrics_path()
-    if os.path.exists(metrics_path):
-        with open(metrics_path) as f:
-            model_metrics = f.read()
-           
-        # Extract imbalance handling information
-        if '=== Class Imbalance Handling ===' in model_metrics:
-            imbalance_section = model_metrics.split('=== Class Imbalance Handling ===')[1]
-            lines = imbalance_section.split('\n')
-           
-            for line in lines:
-                if 'Method used:' in line:
-                    method = line.split('Method used:')[1].strip()
-                    if method == 'class_weight':
-                        imbalance_method = "Class Weights (Balanced)"
-                    elif method == 'smote':
-                        imbalance_method = "SMOTE Oversampling"
-                    elif method == 'undersample':
-                        imbalance_method = "Random Undersampling"
-                    else:
-                        imbalance_method = method.title()
-                elif 'Original class distribution:' in line:
-                    class_distribution = line.split('Original class distribution:')[1].strip()
-                elif 'Imbalance ratio:' in line:
-                    imbalance_ratio = line.split('Imbalance ratio:')[1].strip()
-    # Prepare performance history data for chart
-    performance_history_data = {
-        'labels': [],
-        'accuracy': [],
-        'f1_score': []
-    }
-   
-    # Extract performance metrics from model metrics file
-    if model_metrics:
-        try:
-            lines = model_metrics.split('\n')
-            training_events = []
-            current_event = {}
-           
-            for line in lines:
-                if 'Training completed at:' in line:
-                    if current_event:
-                        training_events.append(current_event)
-                    current_event = {'timestamp': line.split('Training completed at:')[1].strip()}
-                elif 'Accuracy:' in line and current_event:
-                    try:
-                        acc = float(line.split('Accuracy:')[1].strip()) * 100
-                        current_event['accuracy'] = acc
-                    except:
-                        pass
-                elif 'F1-score:' in line and current_event:
-                    try:
-                        f1 = float(line.split('F1-score:')[1].strip()) * 100
-                        current_event['f1_score'] = f1
-                    except:
-                        pass
-           
-            if current_event:
-                training_events.append(current_event)
-           
-            # Prepare chart data from training events
-            for i, event in enumerate(training_events[-10:]):  # Show last 10 training events
-                if 'accuracy' in event and 'f1_score' in event:
-                    performance_history_data['labels'].append(f'Training {i+1}')
-                    performance_history_data['accuracy'].append(round(event['accuracy'], 2))
-                    performance_history_data['f1_score'].append(round(event['f1_score'], 2))
-        except Exception:
-            # If parsing fails, show placeholder data
-            performance_history_data = {
-                'labels': ['Initial Training'],
-                'accuracy': [85.0],
-                'f1_score': [82.0]
-            }
-    # Find the most recent uploaded file for this session (admin)
-    last_result_url = None
-    if session.get('username') == 'admin' and upload_history:
-        last_file = upload_history[-1]['filename']
-        last_result_url = url_for('predict', filename=last_file)
-    # Read login history
-    login_history = []
-    login_log_path = config.get_login_history_path()
-    if os.path.exists(login_log_path):
-        import csv
-        with open(login_log_path, newline='') as csvfile:
-            reader = csv.DictReader(csvfile)
-            login_history = list(reader)[-20:]  # Show last 20 logins
-    # Status message from query param
-    status_message = request.args.get('status_message')
-    return render_template('dashboard.html',
-                         logs=logs,
-                         total_records=total_records,
-                         last_retrain=last_retrain,
-                         upload_history=upload_history,
-                         model_metrics=model_metrics,
-                         upload_trends_data=upload_trends_data,
-                         performance_history_data=performance_history_data,
-                         last_result_url=last_result_url,
-                         login_history=login_history,
-                         status_message=status_message,
-                         imbalance_method=imbalance_method,
-                         class_distribution=class_distribution,
-                         imbalance_ratio=imbalance_ratio)
+    response = get_dashboard_api()
+ 
+    if response.status_code == 200:
+        dashboard_data = response.json()['dashboard_data']
+        return render_template('dashboard.html',
+            total_records=dashboard_data['total_records'],
+            last_retrain=dashboard_data['last_retrain'],
+            upload_history=dashboard_data['upload_history'],
+            model_metrics=dashboard_data['model_metrics'],
+            login_history=dashboard_data['login_history']
+        )
+     
+    else:
+        dashboard_data = response.json()['dashboard_data']
+        return render_template('dashboard.html',
+            total_records=0,
+            last_retrain='N/A',
+            upload_history=[],
+            model_metrics=None,
+            login_history=[]
+        )
+
 #FE
 @app.route('/logout')
 def logout():
@@ -340,7 +199,7 @@ def download_results(filename):
         flash('Results file not found.')
         return redirect(url_for('upload_file'))
 
-    # Step 1: Parse JSON string from response
+    # Parse JSON string from response
     data = response.json()
     if isinstance(data, dict) and "body" in data:
         data = json.loads(data["body"])  # this is your list of dicts
@@ -349,13 +208,13 @@ def download_results(filename):
         flash('No data to download.')
         return redirect(url_for('upload_file'))
 
-    # Step 2: Convert to CSV
+    # Convert to CSV
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=data[0].keys())
     writer.writeheader()
     writer.writerows(data)
 
-    # Step 3: Convert to BytesIO for download
+    # Convert to BytesIO for download
     mem = io.BytesIO()
     mem.write(output.getvalue().encode('utf-8'))
     mem.seek(0)
