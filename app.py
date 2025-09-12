@@ -69,7 +69,7 @@ def upload_file():
             else: 
                 flash("Wrong data format. Please check your data format and try again.", 'new_upload')
                 return redirect(request.url)
-         
+
     return render_template('upload.html', current_time=current_time)
 
 @app.route('/upload_validation', methods=['GET', 'POST']) 
@@ -99,12 +99,12 @@ def upload_validation():
 @app.route('/predict')
 def predict():
     filename = request.args.get('filename')
-    
+
     # Use the proper prediction function from training module
     try:
         response = predict_api(filename)
         print(response.json())
-        
+
         if response.status_code != 200:
             flash(f"Failed to fetch CSV from Lambda: Status = {response.status_code}")
             return redirect(url_for('upload_file'))
@@ -121,29 +121,19 @@ def predict():
                         depressed_count=content["depressed_count"],
                         not_depressed_count=content["not_depressed_count"])
 
-            
+
     except Exception as e:
         flash(f"Prediction failed: {e}")
         return redirect(url_for('upload_file'))
 
 @app.route('/retrain_model', methods=['POST'])
 def retrain_model():
-
     response = retrain_api()
-    if response.status_code == 200:
-        pass
-    else: 
-        pass
-
 
 #BE
 @app.route('/student_depression_template.csv')
 def download_template():
     response = download_template_api()
-
-    if response.status_code != 200:
-        pass
-
     file_bytes = response.content 
 
     # Wrap bytes in a file-like object
@@ -151,12 +141,12 @@ def download_template():
 
     # Send file as attachment
     return send_file(
-        file_obj,
-        mimetype='text/csv',
-        as_attachment=True,
-        download_name='student_depression_template.csv'
-    )
-    
+                file_obj,
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name='student_depression_template.csv'
+        )
+
 @app.route('/dashboard')
 def dashboard():
     # Only allow admin
@@ -165,7 +155,7 @@ def dashboard():
         return redirect(url_for('upload_file'))
 
     response = dashboard_api()
- 
+
     if response.status_code == 200:
         dashboard_data = response.json()['dashboard_data']
         return render_template('dashboard.html',
@@ -175,7 +165,7 @@ def dashboard():
             model_metrics=dashboard_data['model_metrics'],
             login_history=dashboard_data['login_history']
         )
-     
+
     else:
         return render_template('dashboard.html',
             total_records=0,

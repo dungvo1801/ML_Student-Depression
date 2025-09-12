@@ -5,7 +5,7 @@ import os
 load_dotenv()
 
 def retrain_api() -> requests.Response:
-    url = f"{os.getenv('LAMBDA_ENDPOINT')}/predict"
+    url = f"{os.getenv('LAMBDA_ENDPOINT')}/retrain"
 
     payload = {
     }
