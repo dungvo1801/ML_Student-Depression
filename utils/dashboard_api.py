@@ -23,7 +23,7 @@ def dashboard_api() -> requests.Response:
             "Content-Type": "application/json"
         }
 
-        response = requests.get(url, json=payload, headers=headers)
+        response = requests.post(url, json=payload, headers=headers)
         
         # Check if request was successful
         if response.status_code == 200:

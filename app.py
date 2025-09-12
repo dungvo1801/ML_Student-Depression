@@ -12,7 +12,7 @@ from utils.upload_api import upload_api
 from utils.download_results_api import download_results_api  
 from utils.upload_validation_api import upload_validation_api
 from utils.retrain_api import retrain_api
-from utils.get_dashboard_api import get_dashboard_api
+from utils.dashboard_api import dashboard_api
 import io
 import json
 import csv
@@ -67,6 +67,7 @@ def upload_file():
                 tmp_file = response_json['tmp_file']
                 return redirect(url_for('predict', filename=tmp_file))
             else: 
+                flash("Wrong data format. Please check your data format and try again.", 'new_upload')
                 return redirect(request.url)
          
     return render_template('upload.html', current_time=current_time)
@@ -163,7 +164,7 @@ def dashboard():
         flash('Access denied: Admins only.')
         return redirect(url_for('upload_file'))
 
-    response = get_dashboard_api()
+    response = dashboard_api()
  
     if response.status_code == 200:
         dashboard_data = response.json()['dashboard_data']
@@ -176,7 +177,6 @@ def dashboard():
         )
      
     else:
-        dashboard_data = response.json()['dashboard_data']
         return render_template('dashboard.html',
             total_records=0,
             last_retrain='N/A',
