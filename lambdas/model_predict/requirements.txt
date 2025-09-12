@@ -2,5 +2,5 @@ scikit-learn
 pandas
 numpy
 psycopg2-binary
-dotenv
+python-dotenv
 boto3

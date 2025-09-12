@@ -30,7 +30,6 @@ def lambda_handler(event, context):
         
         # APPLY DATA VALIDATION BEFORE PROCESSING
         try:
-            
             new_df = validate_and_clean_data(new_df)
         except Exception as validation_error:
             print(f'Data validation warning: {str(validation_error)}. Continuing with original data.')
@@ -56,9 +55,13 @@ def lambda_handler(event, context):
                             "statusCode": 400,
                             "body": "Uploaded file columns do not match required features. Please use the correct template."
                         }
-                    # Add empty 'Depression' column for new records
+                    
+                    buffer = io.BytesIO()
+                    new_df.to_csv(buffer, index=False)
+                    buffer.seek(0)
+
                     tmp_file = f"tmp{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
-                    upload_bytes(s3_key=tmp_file, file_bytes=file_bytes)
+                    upload_bytes(s3_key=tmp_file, file_bytes=buffer.getvalue())
                     insert_upload_log(cursor, (user, filename))
                     return {
                         "statusCode": 200,

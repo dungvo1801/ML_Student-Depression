@@ -29,7 +29,7 @@ def lambda_handler(event, context):
         df_features = df.drop(columns=['id'], errors='ignore')
         predictions = [1 if len([col for col in df_features.columns if 'stress' in col.lower() or 'anxiety' in col.lower()]) > 2 else 0 
                       for idx, row in df_features.iterrows()]
-        # prediction_probabilities = [0.7 if pred == 1 else 0.3 for pred in predictions]
+        ensemble_proba = [0.7 if pred == 1 else 0.3 for pred in predictions]
         print(f"Using fallback rule-based predictions")
     
     # CREATE COMPLETE RESULTS WITH ALL COLUMNS + PREDICTIONS AT THE END
@@ -38,7 +38,9 @@ def lambda_handler(event, context):
     
     # Add prediction columns at the END (not at arbitrary positions)
     df_with_predictions['Depression'] = predictions
-    
+    df_with_predictions['Depression_Status'] = ['Depressed' if pred == 1 else 'Not Depressed' for pred in predictions]
+    df_with_predictions['Confidence_Score'] = [f"{prob:.3f}" for prob in ensemble_proba]
+
     # Prepare results for display (show all columns)
     result_rows = []
     for idx, row in df_with_predictions.iterrows():

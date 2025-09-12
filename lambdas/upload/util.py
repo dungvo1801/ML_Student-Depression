@@ -4,7 +4,7 @@ import os
 import sys
 import boto3
 import io
-
+import re
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
@@ -65,7 +65,7 @@ def get_master_data(cursor):
     print(f"Retrieved {len(df)} rows from 'student_depression_master'.")
     return df
     
-def validate_and_clean_data(df):
+def validate_and_clean_data(cleaned_df):
     """
     Validate and clean uploaded data before processing.
     
@@ -79,9 +79,6 @@ def validate_and_clean_data(df):
         ValueError: if data has critical issues
     """
     try:
-        # Make a copy to avoid modifying original
-        cleaned_df = df.copy()
-        
         # Basic validation
         if cleaned_df.empty:
             raise ValueError("Uploaded file is empty")
@@ -89,6 +86,13 @@ def validate_and_clean_data(df):
         # Remove completely empty rows and columns
         cleaned_df = cleaned_df.dropna(how='all').dropna(axis=1, how='all')
         
+        # Clean Sleep Duration
+        if 'Sleep Duration' in cleaned_df.columns:
+            def extract_hours(s):
+                match = re.search(r"(\d+(\.\d+)?)", str(s))
+                return float(match.group(1)) if match else np.nan
+            cleaned_df['Sleep Duration'] = cleaned_df['Sleep Duration'].apply(extract_hours)
+       
         # Handle numeric columns - convert strings to numbers where possible
         for col in cleaned_df.columns:
             if col not in ['id']:  # Skip ID column
@@ -98,8 +102,9 @@ def validate_and_clean_data(df):
                     # Only convert if most values are successfully converted
                     if numeric_series.notna().sum() / len(cleaned_df) > 0.7:
                         cleaned_df[col] = numeric_series
-                except:
-                    pass
+                except Exception as e:
+                    print(f'Data validation warning: {e}. Continuing with original data.')
+                    # Continue with original data if validation fails
         
         # Basic range validation for numeric columns using config limits
         validation_limits = {
@@ -107,6 +112,7 @@ def validate_and_clean_data(df):
             "sleep": (validation_config["sleep_min"], validation_config["sleep_max"]),
             "stress": (validation_config["stress_min"], validation_config["stress_max"])
         }
+
         for col in cleaned_df.select_dtypes(include=[np.number]).columns:
             if col not in ['id']:
                 # Remove obvious outliers using configured ranges
@@ -125,4 +131,4 @@ def validate_and_clean_data(df):
     except Exception as e:
         # If validation fails, return original data with warning
         print(f"Data validation warning: {e}")
-        return df
+        return cleaned_df
